@@ -9,7 +9,19 @@ from sqlalchemy.orm import Session
 
 from nexus_ai.database import get_db
 from nexus_ai.models import WorkspaceTask
-from nexus_ai.schemas import TaskCreate, TaskRead, TaskUpdate
+from nexus_ai.ollama import (
+    OllamaClient,
+    OllamaResponseError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+)
+from nexus_ai.schemas import (
+    LLMGenerateRequest,
+    LLMGenerateResponse,
+    TaskCreate,
+    TaskRead,
+    TaskUpdate,
+)
 
 
 logging.basicConfig(
@@ -54,6 +66,37 @@ def read_root() -> dict[str, str]:
 @app.get("/health", response_model=HealthResponse)
 def health_check() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+def get_ollama_client() -> OllamaClient:
+    return OllamaClient()
+
+
+@app.post("/llm/generate", response_model=LLMGenerateResponse)
+def generate_llm(
+    payload: LLMGenerateRequest,
+    client: OllamaClient = Depends(get_ollama_client),
+) -> LLMGenerateResponse:
+    try:
+        return client.generate(
+            prompt=payload.prompt,
+            model=payload.model,
+        )
+    except OllamaTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ollama request timed out",
+        ) from exc
+    except OllamaUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ollama service is unavailable",
+        ) from exc
+    except OllamaResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Ollama returned an invalid response",
+        ) from exc
 
 
 @app.post(
