@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "benchmark_version": "1.0.1",
+  "description": "Deterministic local benchmark cases for llama3.2:latest using the Ollama HTTP API.",
+  "cases": [
+    {
+      "id": "rest_api_explanation",
+      "category": "technical_accuracy",
+      "prompt": "Explain what the acronym REST API stands for and describe its purpose. Mention the full expansion of both REST and API. Answer in 3 to 5 complete sentences.",
+      "evaluation": {
+        "type": "technical_explanation",
+        "minimum_words": 25,
+        "required_patterns": [
+          {
+            "name": "rest_expansion",
+            "pattern": "representational\\s+state\\s+transfer"
+          },
+          {
+            "name": "api_expansion",
+            "pattern": "application\\s+programming\\s+interface"
+          }
+        ],
+        "keyword_groups": [
+          {
+            "name": "http",
+            "any_of": [
+              "http",
+              "hypertext transfer protocol"
+            ]
+          },
+          {
+            "name": "resources",
+            "any_of": [
+              "resource"
+            ]
+          },
+          {
+            "name": "statelessness",
+            "any_of": [
+              "stateless"
+            ]
+          },
+          {
+            "name": "architecture",
+            "any_of": [
+              "architectural style",
+              "architecture",
+              "web service",
+              "networked application"
+            ]
+          },
+          {
+            "name": "client_server",
+            "any_of": [
+              "client",
+              "server"
+            ]
+          }
+        ],
+        "minimum_keyword_groups": 3,
+        "manual_review_required": true,
+        "manual_review_note": "Automated checks verify both expansions, length, and topical coverage. A human must still review factual accuracy, completeness, and clarity."
+      }
+    },
+    {
+      "id": "structured_json",
+      "category": "structured_output",
+      "prompt": "Return exactly one JSON object and nothing else. It must have exactly two keys: \"status\" with the string value \"ok\", and \"model\" with the string value \"llama3.2\". Do not use Markdown code fences and do not add any explanation.",
+      "evaluation": {
+        "type": "exact_json_object",
+        "expected": {
+          "status": "ok",
+          "model": "llama3.2"
+        },
+        "exact_keys": true,
+        "manual_review_required": false,
+        "manual_review_note": null
+      }
+    },
+    {
+      "id": "http_status_bullets",
+      "category": "instruction_following",
+      "prompt": "Return exactly three bullet points and nothing else. Use a hyphen (-) as the bullet marker. Put each bullet on its own line in this order: HTTP 200, HTTP 404, HTTP 500. Each bullet must explain the meaning of the status code it names. Do not include an introduction, conclusion, heading, or any additional text.",
+      "evaluation": {
+        "type": "bullet_list",
+        "bullet_marker": "-",
+        "expected_status_codes": [
+          200,
+          404,
+          500
+        ],
+        "minimum_words_per_bullet": 4,
+        "status_keyword_groups": {
+          "200": [
+            "success",
+            "successful",
+            "succeeded",
+            "ok"
+          ],
+          "404": [
+            "not found",
+            "cannot be found",
+            "could not be found",
+            "cannot be located",
+            "could not be located",
+            "not available",
+            "missing",
+            "does not exist"
+          ],
+          "500": [
+            "internal server error",
+            "internal error",
+            "server error",
+            "server-side error",
+            "unexpected error"
+          ]
+        },
+        "manual_review_required": true,
+        "manual_review_note": "Automated checks verify exact line count, hyphen bullets, order, and required concepts. A human should confirm each explanation is technically correct."
+      }
+    }
+  ]
+}

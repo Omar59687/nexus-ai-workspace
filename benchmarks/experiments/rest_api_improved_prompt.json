@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "experiment_id": "rest_api_prompt_clarity_v1",
+  "target_case_id": "rest_api_explanation",
+  "description": "Experimental prompt for diagnosing the original rest_api_explanation failures. This file is an experiment input only; it does not replace the original benchmark case in benchmarks/cases.json.",
+  "constraints": [
+    "Keep the original case definition and scoring rules unchanged.",
+    "Use identical generation settings for the original and experimental prompts.",
+    "Treat this prompt as a separate experimental condition, not a benchmark case."
+  ],
+  "prompt": "Explain what a REST API is, what the acronyms stand for, and what a REST API is used for. Use these exact expansions: REST means \"Representational State Transfer\", and API means \"Application Programming Interface\". In 3 to 5 complete sentences, accurately explain the purpose of a REST API and describe relevant concepts such as HTTP, resources, statelessness, and client/server interactions where appropriate. Do not invent or guess an expansion; if you are uncertain, say so explicitly instead of inventing one. Be complete, concise, and technically accurate. Do not use Markdown or bullet points."
+}

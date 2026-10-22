@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "experiment_id": "rest_api_concise_prompt_v2",
+  "target_case_id": "rest_api_explanation",
+  "description": "Second experimental prompt for the rest_api_explanation diagnostic. Explicitly targets exactly four sentences while preserving factual requirements. This is an experiment input only; it does not replace the original benchmark case in benchmarks/cases.json.",
+  "constraints": [
+    "Keep the original case definition and scoring rules unchanged.",
+    "Use identical generation settings for every measured trial.",
+    "Treat this prompt as a separate experimental condition, not a benchmark case."
+  ],
+  "prompt": "Explain REST APIs in exactly four complete sentences. Sentence 1 must state that REST stands for Representational State Transfer and API stands for Application Programming Interface. Sentence 2 must explain the purpose of a REST API and mention HTTP and resources. Sentence 3 must accurately explain statelessness. Sentence 4 must explain how the client and server communicate through requests and responses. Do not add a heading, bullet points, or any text outside these four sentences. Do not invent technical definitions."
+}
