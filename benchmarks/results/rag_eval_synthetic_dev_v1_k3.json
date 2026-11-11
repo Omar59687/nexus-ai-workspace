@@ -1,0 +1,487 @@
+{
+  "answerable_query_count": 5,
+  "configuration": {
+    "k": 3,
+    "metrics_include_answerable_queries_only": true,
+    "missing_judgments": "rejected; each question must judge every chunk in its split",
+    "tie_break": "score descending, stable chunk ID ascending"
+  },
+  "dataset": {
+    "dataset_id": "nexus-rag-synthetic-bilingual-v1",
+    "fixture_sha256": "956315661883759989be9afff121f2f4bd92d4e008c65630658133b0e91b14a8",
+    "split": "dev",
+    "synthetic": true
+  },
+  "environment": {
+    "python": "3.12.14"
+  },
+  "evaluation_version": "nexus-rag-eval-v1",
+  "no_answer_query_count": 1,
+  "query_count": 6,
+  "report_schema_version": 1,
+  "strategies": {
+    "bm25_arabic_normalized": {
+      "diagnostics": {
+        "empty_answerable_retrieval_question_ids": [],
+        "missed_relevant_question_ids": [
+          "q-dev-ar-en-revenue",
+          "q-dev-en-ar-branches"
+        ],
+        "tie_break": "BM25 score descending, chunk ID ascending",
+        "unjudged_retrieved_chunk_count": 0
+      },
+      "metrics": {
+        "by_direction": {
+          "ar->ar": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 2,
+            "recall_at_k": 1.0
+          },
+          "ar->en": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->ar": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->en": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          }
+        },
+        "by_evidence_language": {
+          "ar": {
+            "mrr_at_k": 0.6666666666666666,
+            "ndcg_at_k": 0.6666666666666666,
+            "precision_at_k": 0.2222222222222222,
+            "query_count": 3,
+            "recall_at_k": 0.6666666666666666
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "by_query_language": {
+          "ar": {
+            "mrr_at_k": 0.6666666666666666,
+            "ndcg_at_k": 0.6666666666666666,
+            "precision_at_k": 0.2222222222222222,
+            "query_count": 3,
+            "recall_at_k": 0.6666666666666666
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "overall": {
+          "mrr_at_k": 0.6,
+          "ndcg_at_k": 0.6,
+          "precision_at_k": 0.2,
+          "query_count": 5,
+          "recall_at_k": 0.6
+        }
+      },
+      "no_answer": {
+        "abstained_queries": 1,
+        "false_positive_queries": 0,
+        "false_positive_rate": 0.0,
+        "query_count": 1,
+        "results": {
+          "q-dev-en-unanswerable": {
+            "abstained": true,
+            "false_positive": false,
+            "query_language": "en",
+            "ranked_chunks": []
+          }
+        }
+      },
+      "query_results": {
+        "q-dev-ar-ar-normalization": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-ar-revenue",
+              "document_id": "doc-dev-ar-revenue",
+              "end_char": 74,
+              "evidence_language": "ar",
+              "rank": 1,
+              "source": "synthetic/dev/ar-revenue.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-ar-ar-revenue": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-ar-revenue",
+              "document_id": "doc-dev-ar-revenue",
+              "end_char": 74,
+              "evidence_language": "ar",
+              "rank": 1,
+              "source": "synthetic/dev/ar-revenue.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-ar-branches",
+              "document_id": "doc-dev-ar-branches",
+              "end_char": 56,
+              "evidence_language": "ar",
+              "rank": 2,
+              "source": "synthetic/dev/ar-branches.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-ar-en-revenue": {
+          "direction": "ar->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-ar-branches",
+              "document_id": "doc-dev-ar-branches",
+              "end_char": 56,
+              "evidence_language": "ar",
+              "rank": 1,
+              "source": "synthetic/dev/ar-branches.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-ar-revenue",
+              "document_id": "doc-dev-ar-revenue",
+              "end_char": 74,
+              "evidence_language": "ar",
+              "rank": 2,
+              "source": "synthetic/dev/ar-revenue.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-en-ar-branches": {
+          "direction": "en->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-en-branches",
+              "document_id": "doc-dev-en-branches",
+              "end_char": 77,
+              "evidence_language": "en",
+              "rank": 1,
+              "source": "synthetic/dev/en-branches.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-en-en-branches": {
+          "direction": "en->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-en-branches",
+              "document_id": "doc-dev-en-branches",
+              "end_char": 77,
+              "evidence_language": "en",
+              "rank": 1,
+              "source": "synthetic/dev/en-branches.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-en-revenue",
+              "document_id": "doc-dev-en-revenue",
+              "end_char": 81,
+              "evidence_language": "en",
+              "rank": 2,
+              "source": "synthetic/dev/en-revenue.txt",
+              "start_char": 0
+            }
+          ]
+        }
+      }
+    },
+    "bm25_raw": {
+      "diagnostics": {
+        "empty_answerable_retrieval_question_ids": [
+          "q-dev-ar-ar-normalization"
+        ],
+        "missed_relevant_question_ids": [
+          "q-dev-ar-ar-normalization",
+          "q-dev-ar-en-revenue",
+          "q-dev-en-ar-branches"
+        ],
+        "tie_break": "BM25 score descending, chunk ID ascending",
+        "unjudged_retrieved_chunk_count": 0
+      },
+      "metrics": {
+        "by_direction": {
+          "ar->ar": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          },
+          "ar->en": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->ar": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->en": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          }
+        },
+        "by_evidence_language": {
+          "ar": {
+            "mrr_at_k": 0.3333333333333333,
+            "ndcg_at_k": 0.3333333333333333,
+            "precision_at_k": 0.1111111111111111,
+            "query_count": 3,
+            "recall_at_k": 0.3333333333333333
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "by_query_language": {
+          "ar": {
+            "mrr_at_k": 0.3333333333333333,
+            "ndcg_at_k": 0.3333333333333333,
+            "precision_at_k": 0.1111111111111111,
+            "query_count": 3,
+            "recall_at_k": 0.3333333333333333
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "overall": {
+          "mrr_at_k": 0.4,
+          "ndcg_at_k": 0.4,
+          "precision_at_k": 0.13333333333333333,
+          "query_count": 5,
+          "recall_at_k": 0.4
+        }
+      },
+      "no_answer": {
+        "abstained_queries": 1,
+        "false_positive_queries": 0,
+        "false_positive_rate": 0.0,
+        "query_count": 1,
+        "results": {
+          "q-dev-en-unanswerable": {
+            "abstained": true,
+            "false_positive": false,
+            "query_language": "en",
+            "ranked_chunks": []
+          }
+        }
+      },
+      "query_results": {
+        "q-dev-ar-ar-normalization": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": []
+        },
+        "q-dev-ar-ar-revenue": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-ar-revenue",
+              "document_id": "doc-dev-ar-revenue",
+              "end_char": 74,
+              "evidence_language": "ar",
+              "rank": 1,
+              "source": "synthetic/dev/ar-revenue.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-ar-branches",
+              "document_id": "doc-dev-ar-branches",
+              "end_char": 56,
+              "evidence_language": "ar",
+              "rank": 2,
+              "source": "synthetic/dev/ar-branches.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-ar-en-revenue": {
+          "direction": "ar->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-ar-branches",
+              "document_id": "doc-dev-ar-branches",
+              "end_char": 56,
+              "evidence_language": "ar",
+              "rank": 1,
+              "source": "synthetic/dev/ar-branches.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-ar-revenue",
+              "document_id": "doc-dev-ar-revenue",
+              "end_char": 74,
+              "evidence_language": "ar",
+              "rank": 2,
+              "source": "synthetic/dev/ar-revenue.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-en-ar-branches": {
+          "direction": "en->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-en-branches",
+              "document_id": "doc-dev-en-branches",
+              "end_char": 77,
+              "evidence_language": "en",
+              "rank": 1,
+              "source": "synthetic/dev/en-branches.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-dev-en-en-branches": {
+          "direction": "en->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-dev-en-branches",
+              "document_id": "doc-dev-en-branches",
+              "end_char": 77,
+              "evidence_language": "en",
+              "rank": 1,
+              "source": "synthetic/dev/en-branches.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-dev-en-revenue",
+              "document_id": "doc-dev-en-revenue",
+              "end_char": 81,
+              "evidence_language": "en",
+              "rank": 2,
+              "source": "synthetic/dev/en-revenue.txt",
+              "start_char": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+}
