@@ -280,7 +280,7 @@ def test_structured_service_rejected_error_has_attempts_last_error_metrics():
     assert rejected.metrics is metrics
     msg = str(rejected)
     # Public message is intentionally generic — no validation text, no prompt text
-    assert "validation failed" not in msg.lower() or True  # genericity verified by str form
+    assert "validation failed" not in msg.lower()
 
 
 def test_ollama_generation_incomplete_error_is_structured_generation_failure_which_is_ollama_error():
@@ -497,6 +497,9 @@ def test_attempts_counts_calls_without_metadata_too():
     metrics = _aggregate_metrics(attempts=2, per_attempt=per_attempt)
     assert metrics.attempts == 2  # counts the calls even though metadata is missing
     assert len(metrics.per_attempt) == 1  # per_attempt preserves the tuple as-is
+    assert metrics.total_generation_duration_ms is None
+    assert metrics.prompt_eval_count is None
+    assert metrics.eval_count is None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -633,7 +636,9 @@ def test_default_model_flows_to_adapter_when_unspecified():
 
 def test_logging_safety_success_no_prompt_data_or_validation_error(caplog):
     """Successful path: caplog contains neither prompt substring, generated data, nor validation error text."""
-    valid_result = _rest()
+    purpose_marker = "UNIQUE_GENERATED_SUCCESS_MARKER_2a71"
+    valid_result = _rest(purpose=purpose_marker)
+    prompt_marker = "UNIQUE_PROMPT_SUCCESS_MARKER_4f9d"
 
     class LogCaptureAdapter:
         def __init__(self):
@@ -660,97 +665,21 @@ def test_logging_safety_success_no_prompt_data_or_validation_error(caplog):
     with caplog.at_level(logging.INFO, logger="nexus_ai.structured_service"):
         result = service.generate(
             schema_name="rest_explanation",
-            prompt="Explain REST APIs. Give the full expansions of REST and API.",
+            prompt=prompt_marker,
         )
 
-    # caplog is available as a pytest fixture; records accessible within
-    # the caplog context manager block.
-    pass  # assertions moved below
+    assert result.data == valid_result
+    assert len(capturing.call_args) == 1
+    log_text = caplog.text
+    assert prompt_marker not in log_text
+    assert purpose_marker not in log_text
+    assert "validation failed" not in log_text.lower()
 
 
-def test_logging_safety_rejected_no_prompt_data_or_validation_error(caplog):
-    """Rejected path: caplog contains neither prompt substring, generated data, nor validation error text."""
-    class LogCaptureAdapter:
-        def __init__(self):
-            self.call_args = []
-
-        def generate_structured(self, prompt, model_class, *, model=None):
-            self.call_args.append((prompt, model))
-            from nexus_ai.model_adapters import StructuredGeneration
-            from nexus_ai.structured_outputs import RESTExplanation
-            return StructuredGeneration(
-                result=_rest(rest_expansion="Wrong Expansion"),
-                completion=True,
-                model=model or "default",
-                total_duration_ms=100.0,
-                prompt_eval_count=10,
-                eval_count=5,
-            )
-
-    capturing = LogCaptureAdapter()
-    service = StructuredOutputService(
-        adapter=capturing,
-        default_model="default",
-    )
-
-    with caplog.at_level(logging.WARNING, logger="nexus_ai.structured_service"):
-        with raises(StructuredServiceRejectedError):
-            service.generate(
-                schema_name="rest_explanation",
-                prompt="Explain REST APIs. Give the full expansions of REST and API.",
-            )
-
-    pass
 
 
-def test_logging_safety_provider_failure_no_prompt_data_or_validation_error(caplog):
-    """Provider-failure path: caplog contains neither prompt substring, generated data, nor validation error text."""
-    from nexus_ai.model_adapters import OllamaResponseError
-
-    class LogCaptureAdapter:
-        def __init__(self):
-            self.call_args = []
-
-        def generate_structured(self, prompt, model_class, *, model=None):
-            self.call_args.append((prompt, model))
-            from nexus_ai.model_adapters import StructuredGeneration
-            raise OllamaResponseError("Ollama error")
-
-    capturing = LogCaptureAdapter()
-    service = StructuredOutputService(
-        adapter=capturing,
-        default_model="default",
-    )
-
-    with caplog.at_level(logging.WARNING, logger="nexus_ai.structured_service"):
-        with raises(OllamaResponseError):
-            service.generate(
-                schema_name="rest_explanation",
-                prompt="Explain REST APIs. Give the full expansions of REST and API.",
-            )
-
-    pass
 
 
-def test_logging_safety_unknown_schema_no_prompt_in_log(caplog):
-    """Unknown-schema path: caplog contains neither prompt substring, generated data, nor validation error text."""
-    class NonCallingAdapter:
-        def generate_structured(self, prompt, model_class, *, model=None):
-            raise RuntimeError("should not be called")
-
-    service = StructuredOutputService(
-        adapter=NonCallingAdapter(),
-        default_model="default",
-    )
-
-    with caplog.at_level(logging.ERROR, logger="nexus_ai.structured_service"):
-        with raises(StructuredSchemaNotFoundError):
-            service.generate(
-                schema_name="nonexistent_schema",
-                prompt="Explain REST APIs.",
-            )
-
-    pass
 
 
 def test_logging_safety_rejected_no_prompt_data_or_validation_error(caplog):
@@ -790,6 +719,7 @@ def test_logging_safety_rejected_no_prompt_data_or_validation_error(caplog):
         assert "Explain REST APIs." not in record_msg, (
             f"Log contains prompt substring: {record_msg}"
         )
+        assert "Wrong Expansion" not in record_msg
 
 
 def test_logging_safety_provider_failure_no_prompt_data_or_validation_error(caplog):
@@ -823,6 +753,7 @@ def test_logging_safety_provider_failure_no_prompt_data_or_validation_error(capl
         assert "Explain REST APIs." not in record_msg, (
             f"Log contains prompt substring: {record_msg}"
         )
+        assert "Ollama error" not in record_msg
 
 
 def test_logging_safety_unknown_schema_no_prompt_in_log(caplog):
@@ -911,18 +842,6 @@ def test_unknown_schema_lookup_fails_before_any_adapter_call():
         )
 
 
-def test_blank_prompt_fails_before_any_adapter_call():
-    """Blank prompt fails before any adapter call."""
-    from nexus_ai.structured_service import StructuredOutputService
-
-    class NonCallingAdapter:
-        def generate_structured(self, prompt, model_class, *, model=None):
-            raise RuntimeError("should not be called")
-
-    service = StructuredOutputService(
-        adapter=NonCallingAdapter(),
-        default_model="default",
-    )
 
 def test_blank_prompt_fails_before_any_adapter_call():
     """Blank prompt fails before any adapter call."""

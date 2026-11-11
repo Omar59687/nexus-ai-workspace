@@ -362,9 +362,9 @@ def test_provider_error_mid_run_propagates_unchanged_with_metrics(error_type):
         ),
     )
     assert metrics.model == "first-model"
-    assert metrics.total_generation_duration_ms == 10.0
-    assert metrics.prompt_eval_count == 3
-    assert metrics.eval_count == 4
+    assert metrics.total_generation_duration_ms is None
+    assert metrics.prompt_eval_count is None
+    assert metrics.eval_count is None
 
 
 @pytest.mark.parametrize("error_type", PROVIDER_ERROR_TYPES)
@@ -426,7 +426,7 @@ def test_incomplete_generation_is_rejected_with_metrics_no_success_path():
 # ---------------------------------------------------------------------------
 
 
-def test_metrics_sum_only_values_that_are_present():
+def test_metrics_do_not_report_partial_values_as_aggregates():
     first = make_generation(
         INVALID_DATA,
         duration_ms=10.0,
@@ -446,9 +446,12 @@ def test_metrics_sum_only_values_that_are_present():
 
     assert result.metrics.attempts == 2
     assert len(result.metrics.per_attempt) == 2
-    assert result.metrics.total_generation_duration_ms == 10.0
-    assert result.metrics.prompt_eval_count == 3
-    assert result.metrics.eval_count == 4
+    assert result.metrics.total_generation_duration_ms is None
+    assert result.metrics.prompt_eval_count is None
+    assert result.metrics.eval_count is None
+    assert result.metrics.per_attempt[0].duration_ms == 10.0
+    assert result.metrics.per_attempt[0].prompt_eval_count == 3
+    assert result.metrics.per_attempt[0].eval_count == 4
 
 
 def test_metrics_missing_for_every_attempt_stay_none_not_zero():

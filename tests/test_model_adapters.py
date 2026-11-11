@@ -827,7 +827,7 @@ def test_total_duration_rounding_is_three_decimals(
     assert generation.total_duration_ms == expected_ms
 
 
-@pytest.mark.parametrize("value", [None, True, False, "42", 1.5])
+@pytest.mark.parametrize("value", [None, True, False, "42", 1.5, -1_000_000])
 def test_invalid_total_duration_yields_none_not_zero(fake_chat, value):
     metadata = _complete_metadata()
     if value is None:
@@ -843,7 +843,7 @@ def test_invalid_total_duration_yields_none_not_zero(fake_chat, value):
     assert generation.total_duration_ms is None
 
 
-@pytest.mark.parametrize("value", [True, False, "42", 4.2, None])
+@pytest.mark.parametrize("value", [True, False, "42", 4.2, None, -1])
 def test_invalid_token_counts_yield_none_not_zero(fake_chat, value):
     metadata = _complete_metadata()
     if value is None:
@@ -906,6 +906,23 @@ def test_usage_metadata_fills_counts_omitted_from_response_metadata(
 
     assert generation.prompt_eval_count == 13
     assert generation.eval_count == 7
+
+
+def test_negative_usage_metadata_counts_are_ignored(fake_chat):
+    metadata = _complete_metadata()
+    metadata.pop("prompt_eval_count")
+    metadata.pop("eval_count")
+
+    raw = _raw(response_metadata=metadata)
+    raw.usage_metadata = {
+        "input_tokens": -3,
+        "output_tokens": -2,
+        "total_tokens": -5,
+    }
+    generation = _generate(fake_chat, _payload(raw, Answer(text="ok")))
+
+    assert generation.prompt_eval_count is None
+    assert generation.eval_count is None
 
 
 def test_response_metadata_counts_take_precedence_over_usage_metadata(

@@ -94,33 +94,32 @@ def _aggregate_metrics(
         if attempt.model is not None:
             model = attempt.model
 
-    durations = [
-        attempt.duration_ms
-        for attempt in per_attempt
-        if attempt.duration_ms is not None
-    ]
-    prompt_eval_counts = [
-        attempt.prompt_eval_count
-        for attempt in per_attempt
-        if attempt.prompt_eval_count is not None
-    ]
-    eval_counts = [
-        attempt.eval_count
-        for attempt in per_attempt
-        if attempt.eval_count is not None
-    ]
+    # A total is meaningful only when every counted adapter call supplied
+    # that metric. Preserve partial observations in per_attempt instead of
+    # presenting them as complete aggregate totals.
+    def complete_values(attribute: str) -> list[int | float] | None:
+        if len(per_attempt) != attempts:
+            return None
+        values = [getattr(attempt, attribute) for attempt in per_attempt]
+        if any(value is None for value in values):
+            return None
+        return values
+
+    durations = complete_values("duration_ms")
+    prompt_eval_counts = complete_values("prompt_eval_count")
+    eval_counts = complete_values("eval_count")
 
     return GenerationMetrics(
         attempts=attempts,
         per_attempt=per_attempt,
         model=model,
         total_generation_duration_ms=(
-            round(sum(durations), 3) if durations else None
+            round(sum(durations), 3) if durations is not None else None
         ),
         prompt_eval_count=(
-            sum(prompt_eval_counts) if prompt_eval_counts else None
+            sum(prompt_eval_counts) if prompt_eval_counts is not None else None
         ),
-        eval_count=sum(eval_counts) if eval_counts else None,
+        eval_count=sum(eval_counts) if eval_counts is not None else None,
     )
 
 

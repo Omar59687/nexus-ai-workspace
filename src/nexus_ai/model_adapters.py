@@ -386,7 +386,7 @@ class LangChainChatOllamaAdapter:
     def _optional_int(value: object) -> int | None:
         if isinstance(value, bool):
             return None
-        return value if isinstance(value, int) else None
+        return value if isinstance(value, int) and value >= 0 else None
 
     @staticmethod
     def _optional_str(value: object) -> str | None:
