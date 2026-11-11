@@ -4,7 +4,7 @@
 
 **Status:** The official 12-phase structure and numbering come from `docs/PROJECT_BLUEPRINT.md`. This document does not add phases, renumber phases, or amend the blueprint. It records actual status and maps Phase 3 internal checkpoints to the checkpoint ledger.
 
-**Last verified:** 2026-11-11 against isolated baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` and the CP5 working diff.
+**Last verified:** 2026-11-11 against isolated baseline `19269930c25392343219587d6b70f1db6f6cca76` and the timeout/harness follow-up diff.
 
 ## 1. Roadmap reconciliation rule
 
@@ -18,7 +18,7 @@
 
 | Phase | Official name | Objective | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| 1 | FastAPI Foundation | Project setup, application, health endpoint, Pydantic, error handling, logging, API tests | Implementation exists; formal gate not recorded | `P1-CP1`, `P1-CP2`; `P1-QG` not started |
+| 1 | FastAPI Foundation | Project setup, application, health endpoint, Pydantic, error handling, logging, API tests | Implementation exists; formal gate not recorded | `P1-CP1`, `P1-CP2`; `P1-QG` proposed, not accepted |
 | 2 | Database and Persistence | PostgreSQL, SQLAlchemy, Alembic, persistence models | Implementation exists; formal gate not recorded | `P2-CP1`; `P2-QG` not started |
 | 3 | Local LLM Integration | Ollama, LangChain, structured outputs, local model benchmarks | In progress; quality gate blocked | `P3-CP1` to `P3-CP6`, `P3-DEC1`; `P3-QG` blocked |
 | 4 | Production-Oriented RAG | Parsing, chunking, embeddings, vector retrieval, citations, evaluation, incremental indexing | Not started | No implementation |
@@ -41,8 +41,8 @@ Phase 3 is the only phase with active implementation work. Its status is not "co
 | `P3-CP2` | Reproducible benchmark suite | `IMPLEMENTED` |
 | `P3-CP3` | Generic structured-output engine and REST adapter | `IMPLEMENTED` |
 | `P3-CP4` | Schema registry, structured service, model adapter | `ACCEPTED` by owner at `e45a7aa` |
-| `P3-CP5` | FastAPI structured-output integration | `VERIFIED` in isolated checkout; owner review pending |
-| `P3-CP6` | Dedicated service, adapter, and API tests | `BLOCKED` on PostgreSQL regression/Alembic check |
+| `P3-CP5` | FastAPI structured-output integration | `VERIFIED` in baseline commit `1926993`; owner reports Windows regression passed |
+| `P3-CP6` | Dedicated service, adapter, API, and live-smoke safety tests | `BLOCKED` pending final Windows/PostgreSQL verification |
 | `P3-DEC1` | LangChain necessity decision | `PROPOSED`; owner decision pending |
 | `P3-QG` | Phase 3 quality gate | `BLOCKED` |
 

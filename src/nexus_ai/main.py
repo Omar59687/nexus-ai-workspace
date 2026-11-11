@@ -108,6 +108,7 @@ def get_structured_output_service() -> StructuredOutputService:
     adapter = LangChainChatOllamaAdapter(
         base_url=client.base_url,
         default_model=client.default_model,
+        timeout_seconds=client.timeout_seconds,
     )
     return StructuredOutputService(
         adapter=adapter,

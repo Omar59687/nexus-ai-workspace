@@ -2,7 +2,7 @@
 
 **Document role:** Living progress tracker and acceptance ledger.
 
-**Repository identity:** isolated branch `phase-1/foundation`, baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`; CP5/CP6 changes remain uncommitted for owner review.
+**Repository identity:** isolated branch `phase-1/foundation`, baseline `19269930c25392343219587d6b70f1db6f6cca76`; this checkout contains uncommitted timeout, live-smoke harness, regression-test, and documentation changes. The owner's Windows checkout is not mounted or modified.
 
 **Rule:** Implementation does not equal acceptance. A checkpoint must not be marked `ACCEPTED` without the required tests, recorded evidence, and a recorded review disposition. A file existing is not evidence that its task is complete.
 
@@ -38,15 +38,15 @@
 | DOC-001 | Documentation | Documentation foundation and onboarding | `REVIEW_PENDING` | none |
 | P1-CP1 | 1 | Python project scaffold and tooling | `IMPLEMENTED` | `57af43f` |
 | P1-CP2 | 1 | FastAPI foundation, health endpoint, API tests | `IMPLEMENTED` | `98cdb77` |
-| P1-QG | 1 | Phase 1 quality gate | `NOT_STARTED` | n/a |
+| P1-QG | 1 | Phase 1 quality gate | `PROPOSED` | n/a |
 | P2-CP1 | 2 | PostgreSQL persistence and task CRUD | `IMPLEMENTED` | `50663ad` |
 | P2-QG | 2 | Phase 2 quality gate | `NOT_STARTED` | n/a |
 | P3-CP1 | 3 | Local Ollama integration | `IMPLEMENTED` | `9b8227e` |
 | P3-CP2 | 3 | Reproducible local benchmark suite | `IMPLEMENTED` | `17eb240` |
 | P3-CP3 | 3 | Generic structured-output engine | `IMPLEMENTED` | `328c823` |
 | P3-CP4 | 3 | Schema registry, structured service, model adapter | `ACCEPTED` | commit `e45a7aa`; owner-reported Windows verification |
-| P3-CP5 | 3 | FastAPI structured-output integration | `VERIFIED` | isolated implementation; focused tests and two review cycles passed |
-| P3-CP6 | 3 | Dedicated production service, adapter, and API tests | `BLOCKED` | deterministic tests pass; PostgreSQL full regression unavailable here |
+| P3-CP5 | 3 | FastAPI structured-output integration | `VERIFIED` | committed at baseline `1926993`; owner reports full Windows test/check success |
+| P3-CP6 | 3 | Dedicated production service, adapter, and API tests | `BLOCKED` | 166 focused tests pass; full isolated suite has four PostgreSQL-dependent failures |
 | P3-DEC1 | 3 | LangChain necessity decision | `PROPOSED` | ADR-0011 proposed; owner decision pending |
 | P3-QG | 3 | Phase 3 quality gate | `BLOCKED` | n/a |
 | FACTORY-001 | Supporting | Software Factory V2 configuration | `IMPLEMENTED` | `38a2813` |
@@ -357,7 +357,7 @@
   - [x] CP4 review and recovery fixes are included in owner-accepted baseline e45.
   - [x] Dedicated service tests are written and passing.
   - [x] Dedicated adapter tests are written and passing.
-  - [x] FastAPI integration implemented in CP5 working diff (tracked separately under CP5).
+  - [x] FastAPI integration was completed in CP5 and committed at baseline `1926993`.
   - [x] Files are present in owner-confirmed commit `e45a7aa`; owner accepted the CP4 checkpoint.
 - **Acceptance criteria:**
   - [x] The registry rejects unknown schemas and invalid specs deterministically.
@@ -371,7 +371,7 @@
   - Future: `python -m pytest tests/test_model_adapters.py -v`
   - Future: `python -m pytest tests/test_structured_api.py -v`
   - Existing regression: `python -m pytest tests/test_structured_output_pipeline.py tests/test_langchain_structured.py -v`
-- **Actual verification evidence:** The recovered CP4 code and metrics/test hardening are in owner-confirmed commit `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`. The owner explicitly accepted CP4 and reported Windows verification: `398 passed in 8.05s`, `pip check`, `alembic check`, and `git diff --check` passed. These are owner-reported results and were not rerun in this isolated Linux environment. Dedicated service and adapter tests are present in the baseline and were rerun as part of the 300-test focused command below.
+- **Actual verification evidence:** The recovered CP4 code and metrics/test hardening are in owner-confirmed commit `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`. The owner explicitly accepted CP4 and reported Windows verification: `398 passed in 8.05s`, `pip check`, `alembic check`, and `git diff --check` passed. These are owner-reported results and were not rerun in this isolated Linux environment. Dedicated service and adapter tests are present in the baseline and pass in the current 166-test focused follow-up command.
 - **Review status:** Owner acceptance recorded. The current CP5 review does not recreate prior CP4 reviews.
 - **Remaining blockers:** None specific to CP4; phase-wide gates remain separate.
 - **Next action:** Carry the accepted CP4 evidence into the Phase 3 quality gate record.
@@ -383,7 +383,7 @@
 - **Status:** `VERIFIED`
 - **Dependencies:** P3-CP4 accepted; reversible HTTP contract recorded in ADR-0010. CP4's bounded two-attempt semantic retry is retained; TQ-11 remains open.
 - **Files affected:** `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py`, `tests/test_structured_api.py`.
-- **Commit:** None; changes remain isolated and uncommitted for owner review.
+- **Commit:** Baseline `19269930c25392343219587d6b70f1db6f6cca76`; CP5 implementation is committed. This handoff adds no commit.
 - **Tasks:**
   - [x] Define and record a minimal request/response contract and schema registry selection.
   - [x] Implement dependency-injected service wiring from configured Ollama base URL/model.
@@ -396,10 +396,10 @@
   - [x] New route errors and service logs do not reveal prompts, model output, or provider exception details.
   - [x] Existing `/llm/generate` behavior remains covered by regression tests.
 - **Required test command:** `python -m pytest -q tests/test_structured_api.py tests/test_structured_service.py tests/test_structured_schemas.py tests/test_structured_output_pipeline.py tests/test_langchain_structured.py tests/test_model_adapters.py tests/test_llm_api.py tests/test_api.py`.
-- **Actual verification evidence:** Isolated Linux environment, Python 3.12.14: final focused rerun **300 passed in 0.82s**. `compileall`, `pip check`, and `git diff --check` passed. Full suite: 419 passed, four PostgreSQL-dependent failures due to no server at `127.0.0.1:59999`. See `docs/P3_QG_EVIDENCE_2026-11-11.md`.
+- **Actual verification evidence:** Owner reports 423 passed in 8.17s on Windows at baseline, with `pip check`, `alembic check`, `compileall`, and `git diff --check` passing. Cloud regression tests for this follow-up are recorded in CP6/QG evidence; the owner's baseline run does not include these uncommitted changes.
 - **Review status:** API/architecture, security/failure-handling, and test/regression agents completed two cycles. Cycle 1 identified one misleading DI test claim; it was corrected. Cycle 2 found no remaining confirmed issues.
-- **Remaining blockers:** No CP5-specific blocker; owner review of the exported diff remains necessary.
-- **Next action:** Owner reviews the exported patch and reruns local Windows regression.
+- **Remaining blockers:** No CP5-specific blocker remains. The separate CP6 timeout/harness follow-up is awaiting independent review and an owner Windows rerun.
+- **Next action:** Keep the committed endpoint stable; timeout follow-up remains under review and requires owner rerun before integration.
 
 ## P3-CP6 — Dedicated production service, adapter, and API tests
 
@@ -410,18 +410,18 @@
 - **Files affected:** New test files only, names subject to approval.
 - **Commit:** None.
 - **Tasks:**
-  - [ ] Add service tests for schema lookup, retry policy, metrics, and rejection.
-  - [ ] Add adapter tests for completion enforcement and provider error mapping.
-  - [ ] Add API tests for the public contract and negative paths.
-  - [ ] Run focused and full regression suites with recorded output.
+  - [x] Existing baseline includes service, adapter, and API suites for schema lookup, retry policy, metrics, completion enforcement, provider errors, and contract behavior.
+  - [x] Add adapter timeout/default/validation and API timeout-propagation regression cases.
+  - [x] Add opt-in live Ollama smoke harness with fail-closed and output-path safety tests.
+  - [x] Run focused, full, and non-database suites with recorded output.
 - **Acceptance criteria:**
   - [ ] Every production structured-output failure category has a deterministic test.
   - [ ] Tests do not depend on a live Ollama service.
   - [ ] Full regression passes against PostgreSQL with exact totals recorded.
 - **Required test commands:** `python -m pytest -v` and focused test commands from `P3-CP4`/`P3-CP5`.
-- **Actual verification evidence:** The focused suite covering service, adapter, registry, engine, structured API, and legacy endpoints passed 300 tests in 0.82s. Full `pytest -q` ran 423 tests: 419 passed; four database-dependent tests failed to connect to PostgreSQL at `127.0.0.1:59999`. `python -m alembic check` was blocked by the same missing service. `python -m compileall -q src tests`, `python -m pip check`, and `git diff --check` passed. No Ollama service is available; deterministic structured tests use fakes.
-- **Review status:** Three independent reviewers completed two cycles; no confirmed unresolved CP5/API-test findings remain.
-- **Remaining blockers:** Full regression and migration check against a real PostgreSQL service; owner Windows rerun is pending.
+- **Actual verification evidence:** New focused command (`tests/test_live_ollama_smoke.py tests/test_model_adapters.py tests/test_structured_api.py`) passed **166 tests**. Full suite ran **433 tests: 429 passed, four PostgreSQL-dependent failures** due to no service at `127.0.0.1:59999`. Non-database subset passed **427 tests**. `compileall` and `pip check` passed; `alembic check` cannot run without PostgreSQL. The live Ollama smoke was not run; deterministic tests use fakes. The owner reports 423/423 passing with database checks at the pre-change baseline on Windows.
+- **Review status:** Four independent read-only reviews covered timeout/provider behavior, test/smoke safety, gate evidence, and RAG spec consistency. All confirmed findings were corrected; no unresolved review findings remain.
+- **Remaining blockers:** Full regression and migration check on the final changed tree against PostgreSQL; owner Windows rerun; approved Phase 3 gate criteria.
 - **Next action:** Run the full suite and Alembic check in the owner's configured Windows environment before gate consideration.
 
 ## P3-DEC1 — LangChain necessity decision
@@ -466,7 +466,7 @@
   - [ ] Record review and gate decision.
 - **Acceptance criteria:** All eight Mandatory Phase Quality Gate criteria, plus the Phase 3 closure checklist in `docs/PHASE3_COMPLETION_PLAN_DRAFT.md`.
 - **Required test commands:** `python -m pytest -v`; Phase 3 focused tests; cross-phase integration tests; `python -m pip check`; `alembic check`; benchmark CLI as approved.
-- **Actual verification evidence:** `docs/P3_QG_EVIDENCE_2026-11-11.md` records owner-provided CP4 acceptance, this isolated CP5/CP6 test evidence, reviewer outcomes, and blockers. The isolated full run had 419 passed and four PostgreSQL connection failures; `alembic check` could not connect. The owner's separate CP4 report of 398 passed is not represented as a full CP5 regression result. Phase 3 remains open.
+- **Actual verification evidence:** `docs/P3_QG_EVIDENCE_2026-11-11.md` records owner-provided Windows baseline checks, the isolated timeout fix and smoke harness, test totals, and blockers. The final cloud full run had 429 passed and four PostgreSQL connection failures; `alembic check` could not connect. Phase 3 remains open.
 - **Review status:** CP5 received two independent review cycles. The final gate assessment is blocked pending the evidence listed in the evidence record.
 - **Remaining blockers:** P1/P2 gate evidence; owner decision on LangChain ADR-0011 and TQ-11; PostgreSQL full regression/Alembic; cross-phase integration; benchmark reproducibility and reliability criteria; pre-approved performance/resource targets; final owner gate decision.
 - **Next action:** Keep Phase 3 open and complete the listed evidence and decisions before requesting owner gate acceptance.

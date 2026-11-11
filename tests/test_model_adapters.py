@@ -27,6 +27,7 @@ from nexus_ai.model_adapters import (
 from nexus_ai.ollama import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     OllamaError,
     OllamaResponseError,
     OllamaTimeoutError,
@@ -221,7 +222,9 @@ def test_with_structured_output_uses_include_raw_and_model_class(fake_chat):
     assert call["method"] == "json_schema"
 
 
-def test_constructor_kwargs_forwarded_without_timeout_field(fake_chat):
+def test_constructor_kwargs_forward_default_timeout_through_client_kwargs(
+    fake_chat,
+):
     adapter = LangChainChatOllamaAdapter(
         base_url="http://host:11434",
         default_model="default-model",
@@ -236,17 +239,42 @@ def test_constructor_kwargs_forwarded_without_timeout_field(fake_chat):
     )
 
     chat_kwargs = fake_chat.constructions[0]
-    # ChatOllama 1.1.0 has no timeout field; the adapter must not invent one.
     assert set(chat_kwargs) == {
         "model",
         "base_url",
         "temperature",
         "num_predict",
+        "client_kwargs",
     }
-    assert "timeout" not in chat_kwargs
     assert chat_kwargs["base_url"] == "http://host:11434"
     assert chat_kwargs["temperature"] == 0.5
     assert chat_kwargs["num_predict"] == 64
+    assert chat_kwargs["client_kwargs"] == {
+        "timeout": DEFAULT_OLLAMA_TIMEOUT_SECONDS,
+    }
+
+
+def test_explicit_timeout_is_forwarded_through_client_kwargs(fake_chat):
+    adapter = LangChainChatOllamaAdapter(timeout_seconds=17.5)
+
+    _generate(
+        fake_chat,
+        _success_payload(),
+        adapter=adapter,
+    )
+
+    assert fake_chat.constructions[0]["client_kwargs"] == {
+        "timeout": 17.5,
+    }
+
+
+@pytest.mark.parametrize(
+    "timeout_seconds",
+    [0.0, -1.0, float("inf"), float("nan"), 10**1000],
+)
+def test_invalid_timeout_is_rejected(timeout_seconds):
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        LangChainChatOllamaAdapter(timeout_seconds=timeout_seconds)
 
 
 def test_model_override_forwarded_and_used_as_metadata_fallback(fake_chat):
@@ -352,6 +380,7 @@ def test_constructor_signature_is_frozen_keyword_only_with_defaults():
         "default_model",
         "temperature",
         "num_predict",
+        "timeout_seconds",
     ]
     assert all(
         parameter.kind is inspect.Parameter.KEYWORD_ONLY
@@ -362,6 +391,7 @@ def test_constructor_signature_is_frozen_keyword_only_with_defaults():
         None,
         0.0,
         256,
+        None,
     ]
 
 

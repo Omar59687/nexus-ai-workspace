@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 
-The schema registry, bounded-retry service, and provider-specific adapter are implemented in baseline commit `e45a7aa` and CP4 was explicitly accepted by the owner. The HTTP integration is in the uncommitted CP5 working diff and is pending owner review. ADR-0010 records the proposed public contract; ADR-0011 records the proposed LangChain rationale. This architecture ADR remains proposed until the owner accepts the overall direction.
+The schema registry, bounded-retry service, and provider-specific adapter are implemented in baseline history and CP4 was explicitly accepted by the owner. The HTTP integration is committed at the current verified baseline `1926993`. A separate uncommitted follow-up configures structured-call timeouts and adds an opt-in live smoke harness; it does not change the HTTP contract. ADR-0010 records the public contract; ADR-0011 records the proposed LangChain rationale. This architecture ADR remains proposed until the owner accepts the overall direction.
 
 ## Considered options
 
@@ -15,4 +15,4 @@ The schema registry, bounded-retry service, and provider-specific adapter are im
 - Schema validity proves structure only, not factual correctness.
 - The adapter must reject unverifiable completion and incomplete generations.
 - The service must not return a rejected result as success or fabricate metrics.
-- FastAPI integration exists in the CP5 working diff; it should not be treated as accepted until the owner reviews the patch.
+- FastAPI integration is committed at baseline `1926993`; the separate timeout/smoke follow-up is under review and does not alter the HTTP contract.

@@ -2,7 +2,7 @@
 
 **Document role:** Verified current architecture and intended target architecture, kept separate.
 
-**Last verified:** 2026-11-11 against the isolated `phase-1/foundation` baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` and CP5 working diff. CP5 changes remain uncommitted and require owner review.
+**Last verified:** 2026-11-11 against isolated baseline `19269930c25392343219587d6b70f1db6f6cca76` and the uncommitted timeout/harness follow-up. The owner checkout was not modified.
 
 **Rule:** A module is "implemented" only when code exists in the stated location. A module is "accepted" only when `docs/PROJECT_CHECKPOINTS.md` records tests, evidence, and review. Future modules must never be drawn or described as if they exist.
 
@@ -16,7 +16,7 @@ Windows host
 │   ├── GET /
 │   ├── GET /health
 │   ├── POST /llm/generate
-│   ├── POST /structured/generate (CP5 working diff; review verified)
+│   ├── POST /structured/generate (committed at baseline 1926993)
 │   └── /tasks CRUD
 ├── Ollama service (host, default http://127.0.0.1:11434)
 └── Docker Compose
@@ -46,7 +46,7 @@ The application, Ollama, and tests run on the host. Only PostgreSQL is defined i
 | Schema registry | `src/nexus_ai/structured_schemas.py` | Committed at e45; CP4 owner-accepted | `StructuredSchemaSpec`, `SCHEMA_REGISTRY`, lookup error |
 | Structured service | `src/nexus_ai/structured_service.py` | Committed at e45; CP4 owner-accepted | Retry policy, metrics, rejection handling |
 | ChatOllama model adapter | `src/nexus_ai/model_adapters.py` | Committed at e45; CP4 owner-accepted | Completion enforcement; provider error mapping |
-| Structured-output API | `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | CP5 working diff; focused tests and two review cycles pass; owner review pending | `/structured/generate`, configured Ollama dependency, sanitized errors, result and metrics schema |
+| Structured-output API | `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | Committed at baseline 1926993; owner reports Windows baseline tests/checks pass | `/structured/generate`, configured Ollama dependency, sanitized errors, result and metrics schema |
 | Document intelligence | Not present | Not implemented | Planned for Phase 4 |
 | Memory system | Not present | Not implemented | Planned product capability |
 | Multi-agent orchestration | Not present | Not implemented | Planned for Phase 6 |
@@ -132,7 +132,7 @@ scripts/try_langchain_structured.py
 
 The engine itself is provider-agnostic and accepts an injected `generate` callable. The committed adapter defines the REST schema and semantic validation. The demo is not exposed through FastAPI.
 
-#### Flow E — Local structured generation API (CP4 owner-accepted; CP5 diff pending owner review)
+#### Flow E — Local structured generation API (CP5 committed at baseline; timeout follow-up under review)
 
 ```text
 Caller -> POST /structured/generate
@@ -147,7 +147,7 @@ Caller -> POST /structured/generate
   -> StructuredGenerationResult with aggregate metrics
 ```
 
-The service and adapter are in owner-accepted baseline commit e45a7aa. The HTTP route and schemas are present in the current CP5 working diff and have deterministic tests plus two independent review cycles. The route is not included in the baseline commit or yet owner-accepted. No live Ollama call was run in this environment.
+The service, adapter, route, and schemas are committed at baseline `1926993`. The owner reports 423 passing Windows baseline tests and a successful live structured-generation call. This isolated follow-up configures an HTTPX inactivity timeout and adds an opt-in smoke harness; it has not yet been run against live Ollama.
 
 ### 1.5 Persistence model
 

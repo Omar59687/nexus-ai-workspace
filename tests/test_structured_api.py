@@ -11,6 +11,7 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+from nexus_ai import main as main_module
 from nexus_ai.main import app, get_structured_output_service
 from nexus_ai.model_adapters import (
     OllamaGenerationIncompleteError,
@@ -421,3 +422,49 @@ def test_dependency_override_is_used_without_constructing_live_adapter(
 
     assert response.status_code == 200
     assert adapter.calls
+
+
+def test_service_factory_forwards_configured_ollama_timeout(monkeypatch):
+    captured: dict[str, object] = {}
+    expected_adapter = object()
+    expected_service = object()
+
+    class FakeOllamaClient:
+        base_url = "http://ollama.test:11434"
+        default_model = "test-model"
+        timeout_seconds = 37.5
+
+    class FakeStructuredOutputService:
+        def __init__(self, *, adapter, default_model):
+            captured["service_adapter"] = adapter
+            captured["service_default_model"] = default_model
+
+    def make_adapter(**kwargs):
+        captured["adapter_kwargs"] = kwargs
+        return expected_adapter
+
+    def make_service(*, adapter, default_model):
+        FakeStructuredOutputService(
+            adapter=adapter,
+            default_model=default_model,
+        )
+        return expected_service
+
+    monkeypatch.setattr(main_module, "OllamaClient", FakeOllamaClient)
+    monkeypatch.setattr(main_module, "LangChainChatOllamaAdapter", make_adapter)
+    monkeypatch.setattr(
+        main_module,
+        "StructuredOutputService",
+        make_service,
+    )
+
+    service = main_module.get_structured_output_service()
+
+    assert service is expected_service
+    assert captured["adapter_kwargs"] == {
+        "base_url": FakeOllamaClient.base_url,
+        "default_model": FakeOllamaClient.default_model,
+        "timeout_seconds": FakeOllamaClient.timeout_seconds,
+    }
+    assert captured["service_adapter"] is expected_adapter
+    assert captured["service_default_model"] == FakeOllamaClient.default_model

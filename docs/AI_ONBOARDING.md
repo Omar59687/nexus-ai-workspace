@@ -29,10 +29,10 @@ git diff --stat
 git diff --cached --stat
 ```
 
-Verified execution baseline for the current CP5/CP6 work:
+Verified execution baseline for the timeout and smoke-harness follow-up:
 
 - Branch: `phase-1/foundation`
-- Baseline commit: `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` on `phase-1/foundation`
+- Baseline commit: `19269930c25392343219587d6b70f1db6f6cca76` on `phase-1/foundation`
 - Work is being performed in an isolated clone; the owner's Windows checkout is not mounted or modified
 - Owner-reported local untracked `.agents/` and `skills-lock.json` were not present in the clone and have not been overwritten
 - Current changes and verification evidence are exported separately before handoff
@@ -50,14 +50,14 @@ Never read, print, copy, or commit `.env` or its contents. `.env.example` is saf
 3. Confirm its dependencies are satisfied.
 4. Confirm the owner has authorized work on it.
 
-At the verified CP5/CP6 handoff:
+At the verified Phase 3 follow-up handoff:
 
 - The active workstream is Phase 3.
 - `P3-CP4` is owner-accepted at commit `e45a7aa`; Windows validation is owner-reported, not rerun in this Linux environment.
-- `P3-CP5` is implemented and independently reviewed in an isolated, uncommitted diff; owner review is pending.
-- `P3-CP6` is blocked on PostgreSQL-backed full regression and Alembic checks in this environment.
+- `P3-CP5` is committed at baseline `1926993`; the owner reports the baseline full test and database checks passed on Windows.
+- `P3-CP6` includes uncommitted timeout propagation, an opt-in live Ollama smoke harness, and regression tests. Focused tests pass; full cloud regression has four PostgreSQL-dependent failures because no database service is available here.
 - `P3-QG` (Phase 3 quality gate) is `BLOCKED`.
-- The next action is owner review of the exported patch and a Windows full-suite/database rerun. Do not claim Phase 3 acceptance.
+- The next action is independent review of the follow-up and owner rerun on Windows. Do not claim Phase 3 acceptance.
 
 ## 4. Respect file ownership
 
@@ -137,7 +137,7 @@ Do not:
 - **The 37 approved decisions are recorded in `docs/PROJECT_PLAN.md`.** Read the source note there: the repository did not contain a separate 37-item decision log, so the register is an atomic restatement of the owner-approved brief plus blueprint principles.
 - **Open technical questions are listed separately in `docs/PROJECT_PLAN.md`.** TQ-01 to TQ-08 correspond to the Phase 3 draft's D1-D8.
 - **Implemented:** FastAPI foundation, PostgreSQL task CRUD, Ollama generation, benchmark subsystem, committed structured-output engine and REST adapter, and owner-accepted CP4 schema registry/service/adapter at e45.
-- **CP5 working diff:** `/structured/generate` and deterministic API tests are implemented and independently reviewed, pending owner review; see the checkpoint ledger and QG evidence.
+- **CP5:** `/structured/generate` is committed at the current baseline. The timeout propagation fix and opt-in live smoke harness are an uncommitted follow-up; see the checkpoint ledger and QG evidence.
 - **Not implemented:** RAG, memory, agent orchestration, durable execution, RBAC, audit logging, human approval enforcement, cost observability, frontend, SaaS tenancy.
 
 ## 11. Recommended resume sequence

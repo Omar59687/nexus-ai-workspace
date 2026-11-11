@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from nexus_ai.ollama import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_TIMEOUT_SECONDS,
     OllamaError,
     OllamaResponseError,
     OllamaTimeoutError,
@@ -76,6 +77,7 @@ class LangChainChatOllamaAdapter:
         default_model: str | None = None,
         temperature: float = 0.0,
         num_predict: int = 256,
+        timeout_seconds: float | None = None,
     ) -> None:
         configured_base_url = (
             base_url if base_url is not None else DEFAULT_OLLAMA_BASE_URL
@@ -118,6 +120,26 @@ class LangChainChatOllamaAdapter:
             )
         self.num_predict = num_predict
 
+        configured_timeout = (
+            DEFAULT_OLLAMA_TIMEOUT_SECONDS
+            if timeout_seconds is None
+            else timeout_seconds
+        )
+        try:
+            timeout_value = float(configured_timeout)
+        except (OverflowError, TypeError, ValueError):
+            timeout_value = math.nan
+        if (
+            not isinstance(configured_timeout, (int, float))
+            or isinstance(configured_timeout, bool)
+            or not math.isfinite(timeout_value)
+            or timeout_value <= 0
+        ):
+            raise ValueError(
+                "timeout_seconds must be a finite positive number."
+            )
+        self.timeout_seconds = timeout_value
+
     def generate_structured(
         self,
         prompt: str,
@@ -132,13 +154,12 @@ class LangChainChatOllamaAdapter:
             selected_model = self.default_model
 
         try:
-            # ChatOllama 1.1.0 has no timeout field and silently ignores
-            # unknown kwargs, so no timeout is passed here.
             chat = ChatOllama(
                 model=selected_model,
                 base_url=self.base_url,
                 temperature=self.temperature,
                 num_predict=self.num_predict,
+                client_kwargs={"timeout": self.timeout_seconds},
             )
             structured = chat.with_structured_output(
                 model_class,

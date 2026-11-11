@@ -2,9 +2,9 @@
 
 **Document role:** Master plan and requirements baseline.
 
-**Status:** Operational plan reconciled on 2026-11-11. CP5 changes remain uncommitted for owner review; this does not imply Phase 3 gate acceptance.
+**Status:** Operational plan reconciled on 2026-11-11. CP5 is committed at baseline `1926993`; an uncommitted timeout and opt-in smoke-harness follow-up is under review. Phase 3 gate remains blocked.
 
-**Repository identity:** isolated branch `phase-1/foundation`, baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`; see the checkpoint evidence for the uncommitted CP5/CP6 diff.
+**Repository identity:** isolated branch `phase-1/foundation`, baseline `19269930c25392343219587d6b70f1db6f6cca76`; this isolated diff does not modify the owner checkout.
 
 **Authoritative sources:** `docs/PROJECT_BLUEPRINT.md`, `docs/PHASE3_COMPLETION_PLAN_DRAFT.md`, `docs/BENCHMARKS.md`, committed source and tests, and the owner-approved direction recorded for this documentation task. Where this plan and the code disagree, the code and the owner's decision prevail. Update this plan instead of relying on chat history.
 
@@ -152,11 +152,11 @@ Implemented means code exists in the repository at the stated commit. It does no
 | Reproducible local benchmark subsystem | `src/nexus_ai/benchmark/`, `benchmarks/cases.json`, `scripts/run_llm_benchmark.py`, commit `17eb240` | Implemented; benchmark results are local evidence |
 | Generic structured-output generate/validate/retry engine and REST adapter | `src/nexus_ai/structured_output_pipeline.py`, `src/nexus_ai/structured_outputs.py`, commit `328c823` | Implemented and committed; historical regression coverage reported |
 | Local schema registry, structured service, and ChatOllama adapter | `src/nexus_ai/structured_schemas.py`, `src/nexus_ai/structured_service.py`, `src/nexus_ai/model_adapters.py` | In baseline e45; CP4 accepted by owner; owner-reported Windows checks recorded in checkpoint ledger |
-| Registry-backed structured generation API | `POST /structured/generate`; `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | Implemented in uncommitted CP5 diff; 300 focused tests pass; two review cycles clear; owner review pending |
+| Registry-backed structured generation API | `POST /structured/generate`; `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | Committed at baseline `1926993`; owner reports 423-test Windows baseline run and checks passed |
 | Documentation foundation | This document set | Implemented; owner review pending |
 | Software Factory V2 profiles | `.opencode/agents/`, `docs/SOFTWARE_FACTORY_V2.md`, commit `38a2813` | Configured; native smoke test reported blocked |
 
-The model-generation endpoints are `POST /llm/generate` and the uncommitted CP5 `POST /structured/generate`. There is no document endpoint, memory endpoint, agent endpoint, or workflow endpoint.
+The model-generation endpoints are `POST /llm/generate` and `POST /structured/generate`. There is no document endpoint, memory endpoint, agent endpoint, or workflow endpoint.
 
 ## 7. Proposed technical design (not implemented)
 
@@ -227,7 +227,7 @@ Everything in this section is a proposal unless an ADR marked accepted says othe
 | PostgreSQL 17 | Implemented | Operational database; proposed pgvector extension point |
 | Docker Compose | Implemented for PostgreSQL only | Reproducible local database service |
 | Ollama | Implemented | Local model runtime without paid APIs |
-| LangChain Core and `langchain-ollama` | Dependency and CP4 adapter present; used by uncommitted CP5 route | Proposed local structured-output integration; ADR-0011 owner decision and dependency/resource review remain open |
+| LangChain Core and `langchain-ollama` | Dependency and adapter are used by the committed structured route | ADR-0011 owner decision and dependency/resource review remain open |
 | Pytest and FastAPI TestClient | Implemented | Unit and API testing |
 | React, TypeScript, Vite | Proposed, deferred | Frontend phase is blocked by owner decision |
 | pgvector | Proposed | Keeps vector search in PostgreSQL if validated |
@@ -371,12 +371,12 @@ These are not product decisions. They require technical evidence, owner approval
 ## 14. Current state summary
 
 - **Branch:** `phase-1/foundation`
-- **Baseline:** `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` on `phase-1/foundation`; the owner's Windows checkout was not touched
-- **Working tree:** CP5 source/tests and synchronized documentation are modified/untracked in this isolated clone; owner-local `.agents/` and `skills-lock.json` were not present and have not been overwritten
+- **Baseline:** `19269930c25392343219587d6b70f1db6f6cca76` on `phase-1/foundation`; the owner's Windows checkout was not touched
+- **Working tree:** CP6 timeout and smoke-harness follow-up, regression tests, and synchronized documentation are modified/untracked in this isolated clone; owner-local `.agents/` and `skills-lock.json` were not present and have not been overwritten
 - **PostgreSQL:** unavailable in this environment; no server was listening at test port 59999
 - **CP4:** owner-accepted; owner reports 398 passed and `pip check`, `alembic check`, and `git diff --check` passed on Windows
-- **CP5:** 300 focused tests passed; full suite had 419 passed and four PostgreSQL connection failures; owner review pending
-- **Next action:** owner reviews exported CP5 patch, then reruns full tests and database checks locally; no phase closure is claimed
+- **CP5:** committed at baseline; owner reports 423 passed and database checks passed on Windows. Follow-up timeout/harness tests: 166 focused passed; full cloud suite 429 passed and four PostgreSQL connection failures.
+- **Next action:** independent review and owner rerun of the uncommitted timeout follow-up; no phase closure is claimed
 
 ## 15. Unapproved future ideas
 
