@@ -104,6 +104,20 @@ class BenchmarkDatasetTests(unittest.TestCase):
         self.assertFalse(report["dataset"]["synthetic"])
         self.assertEqual(report["query_count"],4)
 
+        # The manifest's declared evidence language must agree with the
+        # adjudicated relevant chunks; otherwise fail during fixture building.
+        mismatched_direction=copy.deepcopy(dataset)
+        mismatched_direction["queries"][0]["evidence_language"]="en"
+        mismatched_summary={
+            **review_summary,
+            "dataset_release_sha256":dataset_release_sha256(mismatched_direction),
+        }
+        with self.assertRaisesRegex(FixtureError,"evidence language conflicts"):
+            to_evaluation_fixture(
+                {**mismatched_direction,"review_records":all_records},
+                mismatched_summary,
+            )
+
         altered=copy.deepcopy(evaluation_fixture)
         altered["human_review"]["records_sha256"]="0"*64
         with self.assertRaisesRegex(FixtureError,"records_sha256"):

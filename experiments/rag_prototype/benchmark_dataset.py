@@ -18,7 +18,12 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from experiments.rag_prototype.evaluation import DIRECTIONS, FixtureError, _string
+from experiments.rag_prototype.evaluation import (
+    DIRECTIONS,
+    FixtureError,
+    _string,
+    validate_fixture,
+)
 from experiments.rag_prototype import IngestionLimits, ingest_corpus
 
 
@@ -512,7 +517,7 @@ def to_evaluation_fixture(
         })
     records = list(checked.get("review_records", []))
     review_bytes = json.dumps(records, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return {
+    fixture = {
         "schema_version": 1,
         "dataset_id": checked["dataset_id"],
         "dataset_version": checked["dataset_version"],
@@ -564,6 +569,11 @@ def to_evaluation_fixture(
             }),
         },
     }
+    # Validate the final converted form here, so a dataset with accepted
+    # judgments that contradict its declared evidence language cannot be
+    # written as an evaluation fixture and fail only later in the CLI.
+    validate_fixture(fixture)
+    return fixture
 
 
 def _evaluation_content_sha256(fixture: Mapping[str, Any]) -> str:

@@ -33,8 +33,15 @@ def main() -> int:
     parser.add_argument("--overwrite", action="store_true", help="replace the requested JSON report path")
     parser.add_argument("--with-e5", action="store_true", help="include local cached multilingual E5 and BM25+E5 RRF")
     parser.add_argument("--e5-minimum-score", type=float, help="dev-selected cosine threshold; can cause explicit abstention")
+    parser.add_argument("--hybrid-minimum-rrf-score", type=float, help="dev-selected RRF threshold for hybrid abstention")
     parser.add_argument("--measure-latency", action="store_true", help="record this host's query timing and system metadata")
     args = parser.parse_args()
+
+    if not args.with_e5 and (
+        args.e5_minimum_score is not None
+        or args.hybrid_minimum_rrf_score is not None
+    ):
+        parser.error("E5 score thresholds require --with-e5")
 
     if args.split == "holdout" and args.fixture is None:
         parser.error("holdout requires an explicit --fixture path")
@@ -42,17 +49,25 @@ def main() -> int:
     fixture = load_fixture(fixture_path)
     retrievers = None
     if args.with_e5:
-        from experiments.rag_prototype.dense_retrieval import LocalE5Encoder, build_dense_hybrid_retrievers
+        from experiments.rag_prototype.dense_retrieval import (
+            DenseRuntimeUnavailable,
+            LocalE5Encoder,
+            build_dense_hybrid_retrievers,
+        )
 
         corpus = _chunks(fixture, args.split)
         retrievers = _default_retrievers(corpus, measure_timing=args.measure_latency)
-        retrievers.update(
-            build_dense_hybrid_retrievers(
-                corpus,
-                LocalE5Encoder(),
-                minimum_score=args.e5_minimum_score,
+        try:
+            retrievers.update(
+                build_dense_hybrid_retrievers(
+                    corpus,
+                    LocalE5Encoder(),
+                    minimum_score=args.e5_minimum_score,
+                    hybrid_minimum_score=args.hybrid_minimum_rrf_score,
+                )
             )
-        )
+        except DenseRuntimeUnavailable as exc:
+            parser.error(f"optional local E5 retrieval is unavailable: {exc}")
     report = run_evaluation(
         fixture,
         split=args.split,

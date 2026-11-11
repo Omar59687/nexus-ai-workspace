@@ -54,3 +54,93 @@ Run ingestion and output only inside directories whose Windows ACLs restrict mod
     python scripts/run_rag_eval.py --fixture data/benchmark/dev-eval.json --split dev -k 5
 
 For protected evaluation, create the holdout with its own IDs and provenance, store it outside the repository with restricted access, and do not call the holdout command until model and retrieval configuration are frozen. Synthetic samples exist only to exercise code paths; they are not quality evidence.
+
+## Frozen corpus and annotation protocol for a real benchmark
+
+The current CSV exporter reviews every query against every document and chunk.
+It is suitable only when that exhaustive review fits below the configured
+100,000-row cap. It does **not** yet accept a candidate-pool manifest. Do not
+silently reduce the pool, treat omitted items as nonrelevant, or claim corpus
+wide Recall when only a pool was judged. If exhaustive review is too large,
+stop before annotation and add/review a versioned pool-manifest feature first.
+
+For a bounded real benchmark, freeze the corpus manifest and annotation policy
+before collecting judgments. For every query, include every chunk returned at
+the agreed depth by every strategy being compared, plus the query's independently
+identified evidence chunks. Freeze model, retriever, preprocessing, top-k,
+pooling depth, and software revisions. Preserve the pool build inputs, strategy
+names and ranks in a restricted audit record; remove system identity and rank
+from reviewer-facing sheets so reviewers judge evidence support rather than
+system preference. The current CSV tooling does not implement this masking or
+pool selection, so the current supported workflow remains exhaustive review.
+
+Keep document-level relevance judgments as a distinct annotation layer. The
+current evaluation runner scores chunk retrieval; it does not compute
+document-level retrieval metrics. Do not report those annotations as measured
+document retrieval quality.
+
+For every answerable query, reviewers must confirm that the declared
+`evidence_language` matches the language of all adjudicated relevant chunks.
+The fixture builder now rejects a mismatch. Unanswerable questions have no
+evidence language and no relevant chunks. Each split must independently include
+AR→AR, EN→EN, AR→EN, and EN→AR.
+
+## Optional local E5 evaluation on Windows
+
+E5 remains opt-in; ordinary tests and BM25 evaluation do not load weights or
+download a model. The adapter pins `intfloat/multilingual-e5-small` to revision
+`614241f622f53c4eeff9890bdc4f31cfecc418b3`, loads from the local cache only,
+and uses `query: ` / `passage: ` prefixes. Start with CPU so the comparison is
+available without CUDA setup. Use a separate virtual environment if the base
+project environment should remain unchanged.
+
+In PowerShell from the repository root (Python 3.12):
+
+```powershell
+py -3.12 -m venv "$env:TEMP\NexusAI-rag-e5"
+& "$env:TEMP\NexusAI-rag-e5\Scripts\Activate.ps1"
+python -m pip install --upgrade pip
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install transformers==5.20.1
+New-Item -ItemType Directory -Force local_data\rag-e5 | Out-Null
+python -m pip freeze | Set-Content -Encoding ascii local_data\rag-e5\e5-environment.lock.txt
+```
+
+The PyTorch command follows the official Windows CPU installation selector;
+check the selector if the installed Python/platform changes. Record the exact
+resolved versions from the lock file with every result. Then fetch the exact
+model revision once and verify offline loading:
+
+```powershell
+$env:HF_HOME = Join-Path $env:LOCALAPPDATA 'NexusAI\huggingface'
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='intfloat/multilingual-e5-small', revision='614241f622f53c4eeff9890bdc4f31cfecc418b3')"
+python -c "from transformers import AutoModel, AutoTokenizer; r='614241f622f53c4eeff9890bdc4f31cfecc418b3'; AutoTokenizer.from_pretrained('intfloat/multilingual-e5-small', revision=r, local_files_only=True, trust_remote_code=False); AutoModel.from_pretrained('intfloat/multilingual-e5-small', revision=r, local_files_only=True, trust_remote_code=False); print('PINNED E5 CACHE: PASS')"
+```
+
+Run the same development fixture and settings for every strategy:
+
+```powershell
+python scripts/run_rag_eval.py --split dev --fixture benchmarks/rag_eval_synthetic_dev_v2.json -k 5 --with-e5 --measure-latency --json-out local_data/rag-e5-dev.json
+```
+
+The checked-in fixture is synthetic; its scores are code-path diagnostics only.
+For real documents, use a separate dev fixture created through the annotation
+workflow above. Select any dense or hybrid abstention threshold using dev only,
+record it, and freeze it with the other retrieval settings. The dense threshold
+is cosine similarity (`--e5-minimum-score`); the hybrid threshold is fused RRF
+score (`--hybrid-minimum-rrf-score`). They have different scales and must not be
+compared numerically.
+
+Only after the corpus, model revision, settings, threshold, and scoring rules
+are frozen, run a protected holdout once with an explicit path and opt-in:
+
+```powershell
+python scripts/run_rag_eval.py --split holdout --fixture 'D:\Nexus-Private\holdout-eval.json' --allow-holdout -k 5 --with-e5 --measure-latency --json-out 'D:\Nexus-Private\holdout-result.json'
+```
+
+Protect both holdout inputs and reports with Windows ACLs. The CLI guard is a
+workflow safeguard, not access control. If PyTorch, Transformers, or the pinned
+cache is absent, E5 measurement is **NOT RUN**; do not substitute synthetic
+fixture performance as real-corpus evidence.
+
+Installation references: [official PyTorch local installation selector](https://pytorch.org/get-started/locally/), [Transformers installation and cache guidance](https://huggingface.co/docs/transformers/installation), and the [pinned multilingual-E5 model card](https://huggingface.co/intfloat/multilingual-e5-small/tree/614241f622f53c4eeff9890bdc4f31cfecc418b3).

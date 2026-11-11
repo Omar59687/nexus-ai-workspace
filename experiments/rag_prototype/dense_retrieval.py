@@ -6,6 +6,7 @@ The E5 adapter loads only an already cached model at an immutable revision.
 
 from __future__ import annotations
 
+import math
 import re
 import time
 from collections.abc import Mapping, Sequence
@@ -99,6 +100,7 @@ def build_dense_hybrid_retrievers(
     *,
     rrf_constant: int = 60,
     minimum_score: float | None = None,
+    hybrid_minimum_score: float | None = None,
     batch_size: int = 32,
     max_dense_chunks: int = 20_000,
 ) -> dict[str, RetrieverSpec]:
@@ -113,8 +115,16 @@ def build_dense_hybrid_retrievers(
         raise ValueError("max_dense_chunks must be a positive integer")
     if len(chunks) > max_dense_chunks:
         raise ValueError("dense corpus exceeds max_dense_chunks before embedding")
-    if minimum_score is not None and not isinstance(minimum_score, (float, int)):
-        raise ValueError("minimum_score must be numeric")
+    for name, value in (
+        ("minimum_score", minimum_score),
+        ("hybrid_minimum_score", hybrid_minimum_score),
+    ):
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, (float, int))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"{name} must be a finite number")
     embedding_started = time.perf_counter()
     passage_vectors_list = []
     for start in range(0, len(chunks), batch_size):
@@ -163,7 +173,11 @@ def build_dense_hybrid_retrievers(
         "hybrid_bm25_e5_rrf": RetrieverSpec(
             hybrid,
             "RRF score descending, chunk ID ascending",
-            None,
-            {**metadata, "strategy": "raw BM25 + dense RRF"},
+            hybrid_minimum_score,
+            {
+                **metadata,
+                "strategy": "raw BM25 + dense RRF",
+                "hybrid_minimum_rrf_score": hybrid_minimum_score,
+            },
         ),
     }
