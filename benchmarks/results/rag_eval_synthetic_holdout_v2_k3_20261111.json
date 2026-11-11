@@ -1,0 +1,489 @@
+{
+  "answerable_query_count": 4,
+  "configuration": {
+    "k": 3,
+    "metrics_include_answerable_queries_only": true,
+    "missing_judgments": "rejected; each question must judge every chunk in its split",
+    "tie_break": "per strategy; unknown unless declared by RetrieverSpec"
+  },
+  "dataset": {
+    "dataset_id": "nexus-rag-synthetic-holdout-v2",
+    "dataset_version": "2",
+    "fixture_sha256": "f37276067885153a089dd88fd3a4b464b13d3d61383763540511d6c1ea6b9ba8",
+    "split": "holdout",
+    "synthetic": true
+  },
+  "environment": {
+    "python": "3.12.14"
+  },
+  "evaluation_version": "nexus-rag-eval-v1",
+  "no_answer_query_count": 1,
+  "query_count": 5,
+  "report_schema_version": 1,
+  "strategies": {
+    "bm25_arabic_normalized": {
+      "answerable_coverage": {
+        "empty_retrievals": 0,
+        "query_count": 4,
+        "retrieval_hit_rate_at_k": 0.5,
+        "retrieved_relevant_at_k": 2
+      },
+      "diagnostics": {
+        "empty_answerable_retrieval_question_ids": [],
+        "metadata": {
+          "strategy": "arabic-normalized BM25"
+        },
+        "minimum_score": null,
+        "missed_relevant_question_ids": [
+          "q-holdout-ar-en-growth",
+          "q-holdout-en-ar-growth"
+        ],
+        "ordering_policy": "score descending, chunk ID ascending",
+        "unjudged_retrieved_chunk_count": 0
+      },
+      "metrics": {
+        "by_direction": {
+          "ar->ar": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          },
+          "ar->en": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->ar": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->en": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          }
+        },
+        "by_evidence_language": {
+          "ar": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "by_query_language": {
+          "ar": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "overall": {
+          "mrr_at_k": 0.5,
+          "ndcg_at_k": 0.5,
+          "precision_at_k": 0.16666666666666666,
+          "query_count": 4,
+          "recall_at_k": 0.5
+        }
+      },
+      "no_answer": {
+        "abstained_queries": 1,
+        "false_positive_queries": 0,
+        "false_positive_rate": 0.0,
+        "query_count": 1,
+        "results": {
+          "q-holdout-ar-unanswerable": {
+            "abstained": true,
+            "false_positive": false,
+            "query_language": "ar",
+            "ranked_chunks": []
+          }
+        }
+      },
+      "query_results": {
+        "q-holdout-ar-ar-cash": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-ar-cash",
+              "document_id": "doc-holdout-ar-cash",
+              "document_sha256": "318cf8505f664c9e625eed75858d0ac1439b07e17a69ba8281380e1bd904782b",
+              "document_version_id": "v1",
+              "end_char": 66,
+              "evidence_language": "ar",
+              "rank": 1,
+              "score": 4.8158912173037445,
+              "source": "synthetic/holdout/ar-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-ar-en-growth": {
+          "direction": "ar->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-ar-growth",
+              "document_id": "doc-holdout-ar-growth",
+              "document_sha256": "cdc104365889f9fc15cddfbff54754411898e0e52330e691b20e1158e8f00f5d",
+              "document_version_id": "v1",
+              "end_char": 67,
+              "evidence_language": "ar",
+              "rank": 1,
+              "score": 2.49293192425135,
+              "source": "synthetic/holdout/ar-growth.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-holdout-ar-cash",
+              "document_id": "doc-holdout-ar-cash",
+              "document_sha256": "318cf8505f664c9e625eed75858d0ac1439b07e17a69ba8281380e1bd904782b",
+              "document_version_id": "v1",
+              "end_char": 66,
+              "evidence_language": "ar",
+              "rank": 2,
+              "score": 1.2039728043259361,
+              "source": "synthetic/holdout/ar-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-en-ar-growth": {
+          "direction": "en->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-en-growth",
+              "document_id": "doc-holdout-en-growth",
+              "document_sha256": "f5c45995065d01b99cb27ab84aaca5508a7f6bac22c3743f684d696027dc84c8",
+              "document_version_id": "v1",
+              "end_char": 75,
+              "evidence_language": "en",
+              "rank": 1,
+              "score": 1.2039728043259361,
+              "source": "synthetic/holdout/en-growth.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-holdout-en-cash",
+              "document_id": "doc-holdout-en-cash",
+              "document_sha256": "231e920c48594d1ee67212bf2cfdfd848ea0f41921b7bd6bb6113bfbd705aa7c",
+              "document_version_id": "v1",
+              "end_char": 71,
+              "evidence_language": "en",
+              "rank": 2,
+              "score": 1.164281393194312,
+              "source": "synthetic/holdout/en-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-en-en-cash": {
+          "direction": "en->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-en-cash",
+              "document_id": "doc-holdout-en-cash",
+              "document_sha256": "231e920c48594d1ee67212bf2cfdfd848ea0f41921b7bd6bb6113bfbd705aa7c",
+              "document_version_id": "v1",
+              "end_char": 71,
+              "evidence_language": "en",
+              "rank": 1,
+              "score": 6.985688359165872,
+              "source": "synthetic/holdout/en-cash.txt",
+              "start_char": 0
+            }
+          ]
+        }
+      }
+    },
+    "bm25_raw": {
+      "answerable_coverage": {
+        "empty_retrievals": 0,
+        "query_count": 4,
+        "retrieval_hit_rate_at_k": 0.5,
+        "retrieved_relevant_at_k": 2
+      },
+      "diagnostics": {
+        "empty_answerable_retrieval_question_ids": [],
+        "metadata": {
+          "strategy": "raw BM25"
+        },
+        "minimum_score": null,
+        "missed_relevant_question_ids": [
+          "q-holdout-ar-en-growth",
+          "q-holdout-en-ar-growth"
+        ],
+        "ordering_policy": "score descending, chunk ID ascending",
+        "unjudged_retrieved_chunk_count": 0
+      },
+      "metrics": {
+        "by_direction": {
+          "ar->ar": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          },
+          "ar->en": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->ar": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "query_count": 1,
+            "recall_at_k": 0.0
+          },
+          "en->en": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "query_count": 1,
+            "recall_at_k": 1.0
+          }
+        },
+        "by_evidence_language": {
+          "ar": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "by_query_language": {
+          "ar": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          },
+          "en": {
+            "mrr_at_k": 0.5,
+            "ndcg_at_k": 0.5,
+            "precision_at_k": 0.16666666666666666,
+            "query_count": 2,
+            "recall_at_k": 0.5
+          }
+        },
+        "overall": {
+          "mrr_at_k": 0.5,
+          "ndcg_at_k": 0.5,
+          "precision_at_k": 0.16666666666666666,
+          "query_count": 4,
+          "recall_at_k": 0.5
+        }
+      },
+      "no_answer": {
+        "abstained_queries": 1,
+        "false_positive_queries": 0,
+        "false_positive_rate": 0.0,
+        "query_count": 1,
+        "results": {
+          "q-holdout-ar-unanswerable": {
+            "abstained": true,
+            "false_positive": false,
+            "query_language": "ar",
+            "ranked_chunks": []
+          }
+        }
+      },
+      "query_results": {
+        "q-holdout-ar-ar-cash": {
+          "direction": "ar->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-ar-cash",
+              "document_id": "doc-holdout-ar-cash",
+              "document_sha256": "318cf8505f664c9e625eed75858d0ac1439b07e17a69ba8281380e1bd904782b",
+              "document_version_id": "v1",
+              "end_char": 66,
+              "evidence_language": "ar",
+              "rank": 1,
+              "score": 4.8158912173037445,
+              "source": "synthetic/holdout/ar-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-ar-en-growth": {
+          "direction": "ar->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "ar",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-ar-growth",
+              "document_id": "doc-holdout-ar-growth",
+              "document_sha256": "cdc104365889f9fc15cddfbff54754411898e0e52330e691b20e1158e8f00f5d",
+              "document_version_id": "v1",
+              "end_char": 67,
+              "evidence_language": "ar",
+              "rank": 1,
+              "score": 2.49293192425135,
+              "source": "synthetic/holdout/ar-growth.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-holdout-ar-cash",
+              "document_id": "doc-holdout-ar-cash",
+              "document_sha256": "318cf8505f664c9e625eed75858d0ac1439b07e17a69ba8281380e1bd904782b",
+              "document_version_id": "v1",
+              "end_char": 66,
+              "evidence_language": "ar",
+              "rank": 2,
+              "score": 1.2039728043259361,
+              "source": "synthetic/holdout/ar-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-en-ar-growth": {
+          "direction": "en->ar",
+          "evidence_language": "ar",
+          "metrics": {
+            "mrr_at_k": 0.0,
+            "ndcg_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "recall_at_k": 0.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-en-growth",
+              "document_id": "doc-holdout-en-growth",
+              "document_sha256": "f5c45995065d01b99cb27ab84aaca5508a7f6bac22c3743f684d696027dc84c8",
+              "document_version_id": "v1",
+              "end_char": 75,
+              "evidence_language": "en",
+              "rank": 1,
+              "score": 1.2039728043259361,
+              "source": "synthetic/holdout/en-growth.txt",
+              "start_char": 0
+            },
+            {
+              "chunk_id": "chunk-holdout-en-cash",
+              "document_id": "doc-holdout-en-cash",
+              "document_sha256": "231e920c48594d1ee67212bf2cfdfd848ea0f41921b7bd6bb6113bfbd705aa7c",
+              "document_version_id": "v1",
+              "end_char": 71,
+              "evidence_language": "en",
+              "rank": 2,
+              "score": 1.164281393194312,
+              "source": "synthetic/holdout/en-cash.txt",
+              "start_char": 0
+            }
+          ]
+        },
+        "q-holdout-en-en-cash": {
+          "direction": "en->en",
+          "evidence_language": "en",
+          "metrics": {
+            "mrr_at_k": 1.0,
+            "ndcg_at_k": 1.0,
+            "precision_at_k": 0.3333333333333333,
+            "recall_at_k": 1.0
+          },
+          "query_language": "en",
+          "ranked_chunks": [
+            {
+              "chunk_id": "chunk-holdout-en-cash",
+              "document_id": "doc-holdout-en-cash",
+              "document_sha256": "231e920c48594d1ee67212bf2cfdfd848ea0f41921b7bd6bb6113bfbd705aa7c",
+              "document_version_id": "v1",
+              "end_char": 71,
+              "evidence_language": "en",
+              "rank": 1,
+              "score": 6.985688359165872,
+              "source": "synthetic/holdout/en-cash.txt",
+              "start_char": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+}

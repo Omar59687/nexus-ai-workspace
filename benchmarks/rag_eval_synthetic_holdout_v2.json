@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "dataset_id": "nexus-rag-synthetic-holdout-v2",
+  "synthetic": true,
+  "description": "Small hand-authored fixtures for runner mechanics only; not a quality benchmark for real documents.",
+  "documents": [
+    {
+      "document_id": "doc-holdout-ar-cash",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "holdout",
+      "source": "synthetic/holdout/ar-cash.txt",
+      "text": "مثال محجوب اصطناعي: بلغ صافي التدفق النقدي ٩ ملايين دينار في ٢٠٢٤."
+    },
+    {
+      "document_id": "doc-holdout-en-cash",
+      "version_id": "v1",
+      "language": "en",
+      "split": "holdout",
+      "source": "synthetic/holdout/en-cash.txt",
+      "text": "Synthetic held-out example: net cash flow was 9 million dinars in 2024."
+    },
+    {
+      "document_id": "doc-holdout-ar-growth",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "holdout",
+      "source": "synthetic/holdout/ar-growth.txt",
+      "text": "بيانات اصطناعية محجوبة: ارتفع عدد العملاء بنسبة ٧ بالمئة خلال ٢٠٢٣."
+    },
+    {
+      "document_id": "doc-holdout-en-growth",
+      "version_id": "v1",
+      "language": "en",
+      "split": "holdout",
+      "source": "synthetic/holdout/en-growth.txt",
+      "text": "Synthetic held-out data: customer count increased by 7 percent during 2023."
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_id": "chunk-holdout-ar-cash",
+      "document_id": "doc-holdout-ar-cash",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "holdout",
+      "source": "synthetic/holdout/ar-cash.txt",
+      "text": "مثال محجوب اصطناعي: بلغ صافي التدفق النقدي ٩ ملايين دينار في ٢٠٢٤."
+    },
+    {
+      "chunk_id": "chunk-holdout-en-cash",
+      "document_id": "doc-holdout-en-cash",
+      "version_id": "v1",
+      "language": "en",
+      "split": "holdout",
+      "source": "synthetic/holdout/en-cash.txt",
+      "text": "Synthetic held-out example: net cash flow was 9 million dinars in 2024."
+    },
+    {
+      "chunk_id": "chunk-holdout-ar-growth",
+      "document_id": "doc-holdout-ar-growth",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "holdout",
+      "source": "synthetic/holdout/ar-growth.txt",
+      "text": "بيانات اصطناعية محجوبة: ارتفع عدد العملاء بنسبة ٧ بالمئة خلال ٢٠٢٣."
+    },
+    {
+      "chunk_id": "chunk-holdout-en-growth",
+      "document_id": "doc-holdout-en-growth",
+      "version_id": "v1",
+      "language": "en",
+      "split": "holdout",
+      "source": "synthetic/holdout/en-growth.txt",
+      "text": "Synthetic held-out data: customer count increased by 7 percent during 2023."
+    }
+  ],
+  "queries": [
+    {
+      "question_id": "q-holdout-ar-ar-cash",
+      "text": "كم بلغ صافي التدفق النقدي؟",
+      "query_language": "ar",
+      "evidence_language": "ar",
+      "split": "holdout",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-holdout-ar-cash",
+        "chunk-holdout-en-cash",
+        "chunk-holdout-ar-growth",
+        "chunk-holdout-en-growth"
+      ],
+      "relevance": {
+        "chunk-holdout-ar-cash": 2,
+        "chunk-holdout-en-cash": 0,
+        "chunk-holdout-ar-growth": 0,
+        "chunk-holdout-en-growth": 0
+      }
+    },
+    {
+      "question_id": "q-holdout-en-en-cash",
+      "text": "What was net cash flow in the English example?",
+      "query_language": "en",
+      "evidence_language": "en",
+      "split": "holdout",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-holdout-ar-cash",
+        "chunk-holdout-en-cash",
+        "chunk-holdout-ar-growth",
+        "chunk-holdout-en-growth"
+      ],
+      "relevance": {
+        "chunk-holdout-ar-cash": 0,
+        "chunk-holdout-en-cash": 2,
+        "chunk-holdout-ar-growth": 0,
+        "chunk-holdout-en-growth": 0
+      }
+    },
+    {
+      "question_id": "q-holdout-ar-en-growth",
+      "text": "ما نسبة زيادة عدد العملاء في المثال الإنجليزي؟",
+      "query_language": "ar",
+      "evidence_language": "en",
+      "split": "holdout",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-holdout-ar-cash",
+        "chunk-holdout-en-cash",
+        "chunk-holdout-ar-growth",
+        "chunk-holdout-en-growth"
+      ],
+      "relevance": {
+        "chunk-holdout-ar-cash": 0,
+        "chunk-holdout-en-cash": 0,
+        "chunk-holdout-ar-growth": 0,
+        "chunk-holdout-en-growth": 2
+      }
+    },
+    {
+      "question_id": "q-holdout-en-ar-growth",
+      "text": "What growth rate is stated in the Arabic data?",
+      "query_language": "en",
+      "evidence_language": "ar",
+      "split": "holdout",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-holdout-ar-cash",
+        "chunk-holdout-en-cash",
+        "chunk-holdout-ar-growth",
+        "chunk-holdout-en-growth"
+      ],
+      "relevance": {
+        "chunk-holdout-ar-cash": 0,
+        "chunk-holdout-en-cash": 0,
+        "chunk-holdout-ar-growth": 2,
+        "chunk-holdout-en-growth": 0
+      }
+    },
+    {
+      "question_id": "q-holdout-ar-unanswerable",
+      "text": "ما رقم المشروع السري QX-777؟",
+      "query_language": "ar",
+      "evidence_language": null,
+      "split": "holdout",
+      "answerable": false,
+      "judged_chunk_ids": [
+        "chunk-holdout-ar-cash",
+        "chunk-holdout-en-cash",
+        "chunk-holdout-ar-growth",
+        "chunk-holdout-en-growth"
+      ],
+      "relevance": {
+        "chunk-holdout-ar-cash": 0,
+        "chunk-holdout-en-cash": 0,
+        "chunk-holdout-ar-growth": 0,
+        "chunk-holdout-en-growth": 0
+      }
+    }
+  ],
+  "dataset_version": "2",
+  "split": "holdout"
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexus-ai.invalid/schemas/rag-dataset-v2.json",
+  "title": "Nexus RAG benchmark dataset, one split",
+  "type": "object",
+  "required": ["schema_version", "dataset_id", "dataset_version", "split", "synthetic", "provenance", "documents", "chunks", "queries", "review_records"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "split": {"enum": ["dev", "holdout"]},
+    "synthetic": {"type": "boolean"},
+    "provenance": {
+      "type": "object",
+      "required": ["source_name", "source_version", "license", "retrieved_at", "source_sha256"],
+      "properties": {
+        "source_name": {"type": "string", "minLength": 1},
+        "source_version": {"type": "string", "minLength": 1},
+        "license": {"type": "string", "minLength": 1},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      },
+      "additionalProperties": true
+    },
+    "documents": {"type": "array", "items": {"$ref": "#/$defs/document"}},
+    "chunks": {"type": "array", "items": {"$ref": "#/$defs/chunk"}},
+    "queries": {"type": "array", "items": {"$ref": "#/$defs/query"}},
+    "review_records": {"type": "array", "items": {"$ref": "#/$defs/review"}},
+    "annotation_policy": {"type": "object"}
+  },
+  "$defs": {
+    "document": {
+      "type": "object",
+      "required": ["document_id", "version_id", "split", "language", "source_ref", "text", "content_sha256"],
+      "properties": {
+        "document_id": {"type": "string", "minLength": 1},
+        "version_id": {"type": "string", "minLength": 1},
+        "split": {"enum": ["dev", "holdout"]},
+        "language": {"enum": ["ar", "en"]},
+        "source_ref": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1, "maxLength": 2000000},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "required": ["chunk_id", "document_id", "version_id", "split", "start_char", "end_char", "text", "content_sha256"],
+      "properties": {
+        "chunk_id": {"type": "string", "minLength": 1},
+        "document_id": {"type": "string", "minLength": 1},
+        "version_id": {"type": "string", "minLength": 1},
+        "split": {"enum": ["dev", "holdout"]},
+        "start_char": {"type": "integer", "minimum": 0},
+        "end_char": {"type": "integer", "minimum": 0},
+        "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      }
+    },
+    "query": {
+      "type": "object",
+      "required": ["question_id", "text", "query_language", "evidence_language", "split", "answerable"],
+      "properties": {
+        "question_id": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1, "maxLength": 32000},
+        "query_language": {"enum": ["ar", "en"]},
+        "evidence_language": {"enum": ["ar", "en", null]},
+        "split": {"enum": ["dev", "holdout"]},
+        "answerable": {"type": "boolean", "description": "Draft answerability only until independently reviewed."}
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["question_id", "target_kind", "target_id", "reviewer_id", "relevance", "rationale", "status"],
+      "properties": {
+        "question_id": {"type": "string"},
+        "target_kind": {"enum": ["answerability", "document", "chunk"]},
+        "target_id": {"type": "string"},
+        "reviewer_id": {"type": "string"},
+        "relevance": {"type": "integer", "minimum": 0, "maximum": 3},
+        "rationale": {"type": "string"},
+        "status": {"const": "submitted"}
+      }
+    }
+  }
+}

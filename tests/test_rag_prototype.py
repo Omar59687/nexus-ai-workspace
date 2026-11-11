@@ -1,4 +1,6 @@
 import math
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,10 +9,12 @@ from unittest.mock import patch
 
 from experiments.rag_prototype import (
     BM25Index,
+    IngestionLimits,
     chunk_document,
     ensure_disjoint_documents,
     exact_cosine,
     mean_retrieval_metrics,
+    ingest_corpus,
     read_document,
     reciprocal_rank_fusion,
     retrieval_metrics,
@@ -75,8 +79,18 @@ class IntakeTests(unittest.TestCase):
     def test_read_cap_still_applies_if_file_size_understates_content(self):
         path = self.root / "fixture.txt"
         path.write_bytes(b"synthetic content")
-        reported = SimpleNamespace(st_mode=path.stat().st_mode, st_size=0)
-        with patch("experiments.rag_prototype.os.fstat", return_value=reported):
+        actual = path.stat()
+        # Keep the mocked stat shape valid for Windows fallback identity checks
+        # while lying only about size to exercise the independent read cap.
+        reported = SimpleNamespace(
+            st_mode=actual.st_mode,
+            st_size=0,
+            st_dev=actual.st_dev,
+            st_ino=actual.st_ino,
+        )
+        with patch("experiments.rag_prototype.os.fstat", return_value=reported), patch(
+            "experiments.rag_prototype._supports_beneath_open", return_value=False
+        ):
             with self.assertRaisesRegex(ValueError, "byte limit"):
                 read_document(self.root, "fixture.txt", max_bytes=4)
 
@@ -87,6 +101,12 @@ class IntakeTests(unittest.TestCase):
         (self.root / "folder.txt").mkdir()
         with self.assertRaisesRegex(ValueError, "regular file"):
             read_document(self.root, "folder.txt", max_bytes=100)
+
+    def test_windows_fallback_rejects_directory_before_open(self):
+        (self.root / "folder.txt").mkdir()
+        with patch("experiments.rag_prototype._supports_beneath_open", return_value=False):
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                read_document(self.root, "folder.txt", max_bytes=100)
 
     def test_chunk_offsets_and_headings_preserve_source(self):
         source = "# Atlas\r\nEnglish 42 and عربي\r\n## أرقام\r\nرقم ١٢٣ 🧪\r\n"
@@ -105,6 +125,84 @@ class IntakeTests(unittest.TestCase):
         short = chunk_document(document, max_chars=4)
         self.assertEqual("".join(c.text for c in short), source)
         self.assertTrue(all(0 < len(c.text) <= 4 for c in short))
+
+    def test_ingest_corpus_enforces_file_aggregate_and_chunk_limits(self):
+        (self.root / "a.txt").write_text("abcdefgh", encoding="utf-8")
+        (self.root / "b.md").write_text("ijklmnop", encoding="utf-8")
+        docs, chunks = ingest_corpus(
+            self.root,
+            limits=IngestionLimits(max_files=2, max_file_bytes=20, max_total_bytes=20,
+                                   max_total_chars=20, max_chunks=8, max_chunk_chars=4),
+        )
+        self.assertEqual([d.source for d in docs], ["a.txt", "b.md"])
+        self.assertEqual("".join(c.text for c in chunks if c.source == "a.txt"), "abcdefgh")
+        cases = (
+            IngestionLimits(max_files=1, max_file_bytes=20, max_total_bytes=20,
+                            max_total_chars=20, max_chunks=8, max_chunk_chars=4),
+            IngestionLimits(max_files=2, max_file_bytes=20, max_total_bytes=10,
+                            max_total_chars=20, max_chunks=8, max_chunk_chars=4),
+            IngestionLimits(max_files=2, max_file_bytes=20, max_total_bytes=20,
+                            max_total_chars=10, max_chunks=8, max_chunk_chars=4),
+            IngestionLimits(max_files=2, max_file_bytes=20, max_total_bytes=20,
+                            max_total_chars=20, max_chunks=2, max_chunk_chars=4),
+        )
+        for limits in cases:
+            with self.subTest(limits=limits), self.assertRaisesRegex(ValueError, "corpus exceeds"):
+                ingest_corpus(self.root, limits=limits)
+
+    def test_ingestion_limits_require_positive_integer_values(self):
+        with self.assertRaisesRegex(ValueError, "max_files"):
+            IngestionLimits(max_files=True)
+
+    def test_ingestion_limits_directory_depth_and_count(self):
+        nested=self.root/"one"/"two"
+        nested.mkdir(parents=True)
+        (nested/"file.txt").write_text("text",encoding="utf-8")
+        with self.assertRaisesRegex(ValueError,"max_depth"):
+            ingest_corpus(self.root,limits=IngestionLimits(max_depth=1))
+        with self.assertRaisesRegex(ValueError,"max_directories"):
+            ingest_corpus(self.root,limits=IngestionLimits(max_directories=1))
+
+    def test_beneath_open_rejects_symlinked_parent_components(self):
+        (self.root / "real").mkdir()
+        (self.root / "real" / "fixture.txt").write_text("safe", encoding="utf-8")
+        try:
+            (self.root / "alias").symlink_to(self.root / "real", target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"Symlinks unavailable: {exc}")
+        with self.assertRaises(ValueError):
+            read_document(self.root, "alias/fixture.txt", max_bytes=100)
+
+    def test_windows_fallback_rejects_in_root_symlinked_parent(self):
+        (self.root / "real").mkdir()
+        (self.root / "real" / "fixture.txt").write_text("safe", encoding="utf-8")
+        try:
+            (self.root / "alias").symlink_to(self.root / "real", target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"Symlinks unavailable: {exc}")
+        with patch("experiments.rag_prototype._supports_beneath_open", return_value=False):
+            with self.assertRaisesRegex(ValueError, "symlink or reparse-point"):
+                read_document(self.root, "alias/fixture.txt", max_bytes=100)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction coverage")
+    def test_windows_fallback_rejects_junction_parent(self):
+        real = self.root / "real"
+        real.mkdir()
+        (real / "fixture.txt").write_text("safe", encoding="utf-8")
+        junction = self.root / "junction"
+        result = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(junction), str(real)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            self.skipTest(f"Could not create a Windows junction: {result.stderr or result.stdout}")
+        try:
+            with self.assertRaisesRegex(ValueError, "symlink or reparse-point"):
+                read_document(self.root, "junction/fixture.txt", max_bytes=100)
+        finally:
+            junction.rmdir()
 
     def test_headings_in_code_fences_and_plain_text_stay_inert(self):
         source = "# Real\n```md\n# Fake\n```\n## Real child\n"
@@ -223,6 +321,19 @@ class RetrievalTests(SourceFixtureCase):
                     exact_cosine([1, 2], {"invalid": invalid}, top_k=2)
         with self.assertRaisesRegex(ValueError, "dimension"):
             exact_cosine([1, 2], {"invalid": [1]}, top_k=2)
+
+    def test_cosine_enforces_vector_count_and_dimension_budgets(self):
+        with self.assertRaisesRegex(ValueError, "max_vectors"):
+            exact_cosine([1], {"a": [1], "b": [1]}, top_k=1, max_vectors=1)
+        with self.assertRaisesRegex(ValueError, "max_dimensions"):
+            exact_cosine([1, 2], {}, top_k=1, max_dimensions=1)
+
+    def test_bm25_enforces_corpus_budgets(self):
+        chunks = self.chunks("x.txt", "one two three")
+        with self.assertRaisesRegex(ValueError, "max_chunk_chars"):
+            BM25Index(chunks, max_chunk_chars=2)
+        with self.assertRaisesRegex(ValueError, "max_total_tokens"):
+            BM25Index(chunks, max_total_tokens=1)
 
     def test_rrf_uses_ranks_and_deterministic_ties(self):
         hits = reciprocal_rank_fusion(

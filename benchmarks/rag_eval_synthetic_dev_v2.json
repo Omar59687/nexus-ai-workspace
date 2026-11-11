@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "dataset_id": "nexus-rag-synthetic-dev-v2",
+  "synthetic": true,
+  "description": "Small hand-authored fixtures for runner mechanics only; not a quality benchmark for real documents.",
+  "documents": [
+    {
+      "document_id": "doc-dev-ar-revenue",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "dev",
+      "source": "synthetic/dev/ar-revenue.txt",
+      "text": "تقرير اصطناعي: بلغت إِيرادات الشركة ١٢٣ مليون دينار في السنة المالية ٢٠٢٥."
+    },
+    {
+      "document_id": "doc-dev-en-revenue",
+      "version_id": "v1",
+      "language": "en",
+      "split": "dev",
+      "source": "synthetic/dev/en-revenue.txt",
+      "text": "Synthetic report: company revenue reached 123 million dinars in fiscal year 2025."
+    },
+    {
+      "document_id": "doc-dev-ar-branches",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "dev",
+      "source": "synthetic/dev/ar-branches.txt",
+      "text": "ملخص اصطناعي: لدى الشركة ٤٢ فرعا، وبدأ التشغيل في عمّان."
+    },
+    {
+      "document_id": "doc-dev-en-branches",
+      "version_id": "v1",
+      "language": "en",
+      "split": "dev",
+      "source": "synthetic/dev/en-branches.txt",
+      "text": "Synthetic summary: the company has 42 branches and operations began in Amman."
+    }
+  ],
+  "chunks": [
+    {
+      "chunk_id": "chunk-dev-ar-revenue",
+      "document_id": "doc-dev-ar-revenue",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "dev",
+      "source": "synthetic/dev/ar-revenue.txt",
+      "text": "تقرير اصطناعي: بلغت إِيرادات الشركة ١٢٣ مليون دينار في السنة المالية ٢٠٢٥."
+    },
+    {
+      "chunk_id": "chunk-dev-en-revenue",
+      "document_id": "doc-dev-en-revenue",
+      "version_id": "v1",
+      "language": "en",
+      "split": "dev",
+      "source": "synthetic/dev/en-revenue.txt",
+      "text": "Synthetic report: company revenue reached 123 million dinars in fiscal year 2025."
+    },
+    {
+      "chunk_id": "chunk-dev-ar-branches",
+      "document_id": "doc-dev-ar-branches",
+      "version_id": "v1",
+      "language": "ar",
+      "split": "dev",
+      "source": "synthetic/dev/ar-branches.txt",
+      "text": "ملخص اصطناعي: لدى الشركة ٤٢ فرعا، وبدأ التشغيل في عمّان."
+    },
+    {
+      "chunk_id": "chunk-dev-en-branches",
+      "document_id": "doc-dev-en-branches",
+      "version_id": "v1",
+      "language": "en",
+      "split": "dev",
+      "source": "synthetic/dev/en-branches.txt",
+      "text": "Synthetic summary: the company has 42 branches and operations began in Amman."
+    }
+  ],
+  "queries": [
+    {
+      "question_id": "q-dev-ar-ar-revenue",
+      "text": "كم بلغت إيرادات الشركة في السنة المالية؟",
+      "query_language": "ar",
+      "evidence_language": "ar",
+      "split": "dev",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 2,
+        "chunk-dev-en-revenue": 0,
+        "chunk-dev-ar-branches": 0,
+        "chunk-dev-en-branches": 0
+      }
+    },
+    {
+      "question_id": "q-dev-ar-ar-normalization",
+      "text": "ايرادات",
+      "query_language": "ar",
+      "evidence_language": "ar",
+      "split": "dev",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 2,
+        "chunk-dev-en-revenue": 0,
+        "chunk-dev-ar-branches": 0,
+        "chunk-dev-en-branches": 0
+      }
+    },
+    {
+      "question_id": "q-dev-en-en-branches",
+      "text": "How many branches did the English summary report?",
+      "query_language": "en",
+      "evidence_language": "en",
+      "split": "dev",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 0,
+        "chunk-dev-en-revenue": 0,
+        "chunk-dev-ar-branches": 0,
+        "chunk-dev-en-branches": 2
+      }
+    },
+    {
+      "question_id": "q-dev-ar-en-revenue",
+      "text": "ما قيمة الإيرادات في التقرير الإنجليزي؟",
+      "query_language": "ar",
+      "evidence_language": "en",
+      "split": "dev",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 0,
+        "chunk-dev-en-revenue": 2,
+        "chunk-dev-ar-branches": 0,
+        "chunk-dev-en-branches": 0
+      }
+    },
+    {
+      "question_id": "q-dev-en-ar-branches",
+      "text": "Which city does the Arabic summary name?",
+      "query_language": "en",
+      "evidence_language": "ar",
+      "split": "dev",
+      "answerable": true,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 0,
+        "chunk-dev-en-revenue": 0,
+        "chunk-dev-ar-branches": 2,
+        "chunk-dev-en-branches": 0
+      }
+    },
+    {
+      "question_id": "q-dev-en-unanswerable",
+      "text": "ZXQX000 NONEXISTENTCODE",
+      "query_language": "en",
+      "evidence_language": null,
+      "split": "dev",
+      "answerable": false,
+      "judged_chunk_ids": [
+        "chunk-dev-ar-revenue",
+        "chunk-dev-en-revenue",
+        "chunk-dev-ar-branches",
+        "chunk-dev-en-branches"
+      ],
+      "relevance": {
+        "chunk-dev-ar-revenue": 0,
+        "chunk-dev-en-revenue": 0,
+        "chunk-dev-ar-branches": 0,
+        "chunk-dev-en-branches": 0
+      }
+    }
+  ],
+  "dataset_version": "2",
+  "split": "dev"
+}
