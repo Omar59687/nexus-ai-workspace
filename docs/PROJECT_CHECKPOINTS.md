@@ -2,7 +2,7 @@
 
 **Document role:** Living progress tracker and acceptance ledger.
 
-**Repository identity at last verification:** branch `phase-1/foundation`, HEAD `e200aad34646f7b58cdd94db26ba735b2834aac5`, last verified 2026-11-10.
+**Repository identity:** isolated branch `phase-1/foundation`, baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`; CP5/CP6 changes remain uncommitted for owner review.
 
 **Rule:** Implementation does not equal acceptance. A checkpoint must not be marked `ACCEPTED` without the required tests, recorded evidence, and a recorded review disposition. A file existing is not evidence that its task is complete.
 
@@ -44,10 +44,10 @@
 | P3-CP1 | 3 | Local Ollama integration | `IMPLEMENTED` | `9b8227e` |
 | P3-CP2 | 3 | Reproducible local benchmark suite | `IMPLEMENTED` | `17eb240` |
 | P3-CP3 | 3 | Generic structured-output engine | `IMPLEMENTED` | `328c823` |
-| P3-CP4 | 3 | Schema registry, structured service, model adapter | `REVIEW_PENDING` | uncommitted |
-| P3-CP5 | 3 | FastAPI structured-output integration | `NOT_STARTED` | none |
-| P3-CP6 | 3 | Dedicated production service, adapter, and API tests | `NOT_STARTED` | none |
-| P3-DEC1 | 3 | LangChain necessity decision | `NOT_STARTED` | none |
+| P3-CP4 | 3 | Schema registry, structured service, model adapter | `ACCEPTED` | commit `e45a7aa`; owner-reported Windows verification |
+| P3-CP5 | 3 | FastAPI structured-output integration | `VERIFIED` | isolated implementation; focused tests and two review cycles passed |
+| P3-CP6 | 3 | Dedicated production service, adapter, and API tests | `BLOCKED` | deterministic tests pass; PostgreSQL full regression unavailable here |
+| P3-DEC1 | 3 | LangChain necessity decision | `PROPOSED` | ADR-0011 proposed; owner decision pending |
 | P3-QG | 3 | Phase 3 quality gate | `BLOCKED` | n/a |
 | FACTORY-001 | Supporting | Software Factory V2 configuration | `IMPLEMENTED` | `38a2813` |
 
@@ -77,7 +77,7 @@
 
 - **Phase:** Documentation
 - **Objective:** Create a permanent documentation system so a future AI session can identify the repository state, approved decisions, implemented capabilities, open questions, and next checkpoint without reconstructing chat history.
-- **Status:** `REVIEW_PENDING`
+- **Status:** `ACCEPTED`
 - **Dependencies:** P0-CP1; repository preflight
 - **Files affected:** `docs/PROJECT_PLAN.md`, `docs/PROJECT_CHECKPOINTS.md`, `docs/AI_ONBOARDING.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `GLOSSARY.md`, `docs/adr/`
 - **Commit:** None; owner has not authorized a commit.
@@ -188,7 +188,7 @@
 
 - **Phase:** 1
 - **Objective:** Verify every Phase 1 acceptance criterion, phase test, regression test, cross-phase check, quality check, review, and evidence record.
-- **Status:** `NOT_STARTED`
+- **Status:** `PROPOSED`
 - **Dependencies:** P1-CP1, P1-CP2
 - **Files affected:** None yet
 - **Commit:** Not applicable
@@ -344,70 +344,68 @@
 
 - **Phase:** 3
 - **Objective:** Add a named schema registry, a service that coordinates schema-driven generation with bounded retries and metrics, and a ChatOllama adapter that verifies provider completion.
-- **Status:** `REVIEW_PENDING`
+- **Status:** `ACCEPTED`
 - **Dependencies:** P3-CP3
 - **Files affected:** `src/nexus_ai/structured_schemas.py`, `src/nexus_ai/structured_service.py`, `src/nexus_ai/model_adapters.py`
-- **Commit:** None; files are untracked.
+- **Commit:** `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`.
 - **Tasks:**
   - [x] `structured_schemas.py` exists locally with a schema registry and lookup errors.
   - [x] `structured_service.py` exists locally with retry policy, metrics aggregation, and rejection handling.
   - [x] `model_adapters.py` exists locally with a `ChatOllama` structured adapter and completion enforcement.
   - [x] Pair 1 implementation was reported complete.
   - [x] Pair 2 implementation was reported complete.
-  - [ ] Pair 1 independent review is confirmed complete.
-  - [ ] Pair 2 independent review is confirmed complete.
-  - [ ] Dedicated service tests are written and passing.
-  - [ ] Dedicated adapter tests are written and passing.
-  - [ ] FastAPI integration is implemented.
-  - [ ] Files are committed with owner approval.
+  - [x] CP4 review and recovery fixes are included in owner-accepted baseline e45.
+  - [x] Dedicated service tests are written and passing.
+  - [x] Dedicated adapter tests are written and passing.
+  - [x] FastAPI integration implemented in CP5 working diff (tracked separately under CP5).
+  - [x] Files are present in owner-confirmed commit `e45a7aa`; owner accepted the CP4 checkpoint.
 - **Acceptance criteria:**
-  - [ ] The registry rejects unknown schemas and invalid specs deterministically.
-  - [ ] The service enforces the retry cap and never returns a rejected result as success.
-  - [ ] Provider-category failures propagate with metrics attached and without fabricated values.
-  - [ ] The adapter rejects parsing failures, missing completion metadata, `done=False`, and `done_reason="length"`.
-  - [ ] Unit tests cover schema lookup, retries, metrics, and completion failure categories.
-  - [ ] API integration tests cover the public boundary once it exists.
-  - [ ] Independent reviews are recorded for both implementation pairs.
+  - [x] The registry rejects unknown schemas and invalid specs deterministically.
+  - [x] The service enforces the retry cap and never returns a rejected result as success.
+  - [x] Provider-category failures propagate with metrics attached and without fabricated values.
+  - [x] The adapter rejects parsing failures, missing completion metadata, `done=False`, and `done_reason="length"`.
+  - [x] Unit tests cover schema lookup, retries, metrics, and completion failure categories.
+  - [x] Owner accepted CP4 with review and test evidence.
 - **Required test commands:**
   - Future: `python -m pytest tests/test_structured_service.py -v`
   - Future: `python -m pytest tests/test_model_adapters.py -v`
   - Future: `python -m pytest tests/test_structured_api.py -v`
   - Existing regression: `python -m pytest tests/test_structured_output_pipeline.py tests/test_langchain_structured.py -v`
-- **Actual verification evidence:** File existence verified 2026-11-10. The files are untracked and therefore not part of HEAD `e200aad`. No dedicated tests exist for the service or adapter. `src/nexus_ai/main.py` does not import the service, registry, or adapter. No review report is present in the repository.
-- **Review status:** Independent reviews not confirmed complete. No reviewer names, diff coverage, or disposition are recorded.
-- **Remaining blockers:** Review confirmation, dedicated tests, API integration, and owner-approved commit.
-- **Next action:** Complete and record independent reviews of both pairs, then add dedicated tests before attempting FastAPI integration.
+- **Actual verification evidence:** The recovered CP4 code and metrics/test hardening are in owner-confirmed commit `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`. The owner explicitly accepted CP4 and reported Windows verification: `398 passed in 8.05s`, `pip check`, `alembic check`, and `git diff --check` passed. These are owner-reported results and were not rerun in this isolated Linux environment. Dedicated service and adapter tests are present in the baseline and were rerun as part of the 300-test focused command below.
+- **Review status:** Owner acceptance recorded. The current CP5 review does not recreate prior CP4 reviews.
+- **Remaining blockers:** None specific to CP4; phase-wide gates remain separate.
+- **Next action:** Carry the accepted CP4 evidence into the Phase 3 quality gate record.
 
 ## P3-CP5 — FastAPI structured-output integration
 
 - **Phase:** 3
-- **Objective:** Expose an approved structured-output contract through FastAPI with documented request, response, error mapping, and metrics behavior.
-- **Status:** `NOT_STARTED`
-- **Dependencies:** P3-CP4, TQ-05, TQ-09, TQ-11
-- **Files affected:** None yet. Likely `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py`, and a new API test file, subject to an approved design.
-- **Commit:** None.
+- **Objective:** Expose registry-backed structured generation with documented request, response, errors, and metrics.
+- **Status:** `VERIFIED`
+- **Dependencies:** P3-CP4 accepted; reversible HTTP contract recorded in ADR-0010. CP4's bounded two-attempt semantic retry is retained; TQ-11 remains open.
+- **Files affected:** `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py`, `tests/test_structured_api.py`.
+- **Commit:** None; changes remain isolated and uncommitted for owner review.
 - **Tasks:**
-  - [ ] Approve the public contract and schema selection mechanism.
-  - [ ] Approve the error mapping and metrics exposure.
-  - [ ] Implement the route and service wiring.
-  - [ ] Add API tests including negative paths.
-  - [ ] Record evidence and review.
+  - [x] Define and record a minimal request/response contract and schema registry selection.
+  - [x] Implement dependency-injected service wiring from configured Ollama base URL/model.
+  - [x] Map unknown schema, validation, timeout, unavailable, malformed, and incomplete outcomes to generic HTTP errors.
+  - [x] Add deterministic endpoint tests, including no prompt/error leakage and legacy API compatibility.
+  - [x] Complete two independent review cycles and preserve findings.
 - **Acceptance criteria:**
-  - [ ] A valid request returns a validated structured result and measured metrics.
-  - [ ] Unknown schemas, blank prompts, provider failures, incomplete generations, and final validation rejection map to documented errors.
-  - [ ] No secret or prompt content leaks in errors or logs.
-  - [ ] Existing endpoints and tests remain unchanged and passing.
-- **Required test commands:** Future: `python -m pytest tests/test_structured_api.py -v`; full regression after integration.
-- **Actual verification evidence:** None. `src/nexus_ai/main.py` has no structured-output route as of 2026-11-10.
-- **Review status:** Not started.
-- **Remaining blockers:** Open decisions and `P3-CP4` review/tests.
-- **Next action:** Do not implement until `P3-CP4` is reviewed and the API contract is approved.
+  - [x] Valid requests return validated structured data plus available per-attempt and aggregate metrics.
+  - [x] Unknown schemas, invalid requests, provider failures, incomplete generations, and semantic rejection have explicit statuses.
+  - [x] New route errors and service logs do not reveal prompts, model output, or provider exception details.
+  - [x] Existing `/llm/generate` behavior remains covered by regression tests.
+- **Required test command:** `python -m pytest -q tests/test_structured_api.py tests/test_structured_service.py tests/test_structured_schemas.py tests/test_structured_output_pipeline.py tests/test_langchain_structured.py tests/test_model_adapters.py tests/test_llm_api.py tests/test_api.py`.
+- **Actual verification evidence:** Isolated Linux environment, Python 3.12.14: final focused rerun **300 passed in 0.82s**. `compileall`, `pip check`, and `git diff --check` passed. Full suite: 419 passed, four PostgreSQL-dependent failures due to no server at `127.0.0.1:59999`. See `docs/P3_QG_EVIDENCE_2026-11-11.md`.
+- **Review status:** API/architecture, security/failure-handling, and test/regression agents completed two cycles. Cycle 1 identified one misleading DI test claim; it was corrected. Cycle 2 found no remaining confirmed issues.
+- **Remaining blockers:** No CP5-specific blocker; owner review of the exported diff remains necessary.
+- **Next action:** Owner reviews the exported patch and reruns local Windows regression.
 
 ## P3-CP6 — Dedicated production service, adapter, and API tests
 
 - **Phase:** 3
 - **Objective:** Provide dedicated tests for the production structured-output service, model adapter, and API boundary, separate from historical engine and REST-demo tests.
-- **Status:** `NOT_STARTED`
+- **Status:** `BLOCKED`
 - **Dependencies:** P3-CP4, P3-CP5
 - **Files affected:** New test files only, names subject to approval.
 - **Commit:** None.
@@ -421,16 +419,16 @@
   - [ ] Tests do not depend on a live Ollama service.
   - [ ] Full regression passes against PostgreSQL with exact totals recorded.
 - **Required test commands:** `python -m pytest -v` and focused test commands from `P3-CP4`/`P3-CP5`.
-- **Actual verification evidence:** None. No dedicated service, adapter, or API test file exists as of 2026-11-10.
-- **Review status:** Not started.
-- **Remaining blockers:** `P3-CP4` and `P3-CP5`.
-- **Next action:** Create tests only after the interface and contract are approved and reviewed.
+- **Actual verification evidence:** The focused suite covering service, adapter, registry, engine, structured API, and legacy endpoints passed 300 tests in 0.82s. Full `pytest -q` ran 423 tests: 419 passed; four database-dependent tests failed to connect to PostgreSQL at `127.0.0.1:59999`. `python -m alembic check` was blocked by the same missing service. `python -m compileall -q src tests`, `python -m pip check`, and `git diff --check` passed. No Ollama service is available; deterministic structured tests use fakes.
+- **Review status:** Three independent reviewers completed two cycles; no confirmed unresolved CP5/API-test findings remain.
+- **Remaining blockers:** Full regression and migration check against a real PostgreSQL service; owner Windows rerun is pending.
+- **Next action:** Run the full suite and Alembic check in the owner's configured Windows environment before gate consideration.
 
 ## P3-DEC1 — LangChain necessity decision
 
 - **Phase:** 3
 - **Objective:** Decide whether LangChain is required for a concrete approved Phase 3 use case, or should be deferred or rejected.
-- **Status:** `NOT_STARTED`
+- **Status:** `PROPOSED`
 - **Dependencies:** TQ-01, TQ-04
 - **Files affected:** A decision record under `docs/adr/` if approved.
 - **Commit:** None.
@@ -444,7 +442,7 @@
   - [ ] The decision is one of adopt, defer, or reject.
   - [ ] The owner approves the record.
 - **Required test commands:** None; decision record only.
-- **Actual verification evidence:** None. LangChain dependencies exist in `pyproject.toml`, and a demo/local adapter uses them, but no production use case is approved.
+- **Actual verification evidence:** The current CP5 route wires the CP4 `LangChainChatOllamaAdapter` into a real API use case. ADR-0011 records a proposed rationale to retain that adapter for this local Ollama integration while preserving a provider boundary. Owner approval remains outstanding; this is not an accepted adoption decision.
 - **Review status:** Not started.
 - **Remaining blockers:** Owner decision.
 - **Next action:** Record the decision before treating LangChain as part of the production architecture.
@@ -459,8 +457,8 @@
 - **Commit:** Not applicable
 - **Tasks:**
   - [ ] Resolve TQ-01 to TQ-08 (the Phase 3 draft's D1-D8).
-  - [ ] Complete and record `P3-CP4` reviews.
-  - [ ] Complete `P3-CP5` and `P3-CP6`.
+  - [x] Record owner acceptance of `P3-CP4` and complete `P3-CP5` implementation/review.
+  - [ ] Complete PostgreSQL-backed `P3-CP6` regression and Alembic verification.
   - [ ] Run phase tests and full regression against PostgreSQL.
   - [ ] Run cross-phase integration tests.
   - [ ] Re-run or cite benchmark reports with model, Ollama version, hardware, settings, tokens, and completion state.
@@ -468,10 +466,10 @@
   - [ ] Record review and gate decision.
 - **Acceptance criteria:** All eight Mandatory Phase Quality Gate criteria, plus the Phase 3 closure checklist in `docs/PHASE3_COMPLETION_PLAN_DRAFT.md`.
 - **Required test commands:** `python -m pytest -v`; Phase 3 focused tests; cross-phase integration tests; `python -m pip check`; `alembic check`; benchmark CLI as approved.
-- **Actual verification evidence:** No gate evidence package exists. Historical results: the Phase 3 draft records 116 passed after PostgreSQL restoration; the owner brief records a later 162 passed. Neither was rerun in this documentation session. The Phase 3 draft remains unapproved.
-- **Review status:** Not started.
-- **Remaining blockers:** Unresolved decisions, unconfirmed reviews, missing tests, missing API integration, and no durable evidence artifact.
-- **Next action:** Treat Phase 3 as open. The immediate next checkpoint is completing `P3-CP4` review and tests.
+- **Actual verification evidence:** `docs/P3_QG_EVIDENCE_2026-11-11.md` records owner-provided CP4 acceptance, this isolated CP5/CP6 test evidence, reviewer outcomes, and blockers. The isolated full run had 419 passed and four PostgreSQL connection failures; `alembic check` could not connect. The owner's separate CP4 report of 398 passed is not represented as a full CP5 regression result. Phase 3 remains open.
+- **Review status:** CP5 received two independent review cycles. The final gate assessment is blocked pending the evidence listed in the evidence record.
+- **Remaining blockers:** P1/P2 gate evidence; owner decision on LangChain ADR-0011 and TQ-11; PostgreSQL full regression/Alembic; cross-phase integration; benchmark reproducibility and reliability criteria; pre-approved performance/resource targets; final owner gate decision.
+- **Next action:** Keep Phase 3 open and complete the listed evidence and decisions before requesting owner gate acceptance.
 
 ## FACTORY-001 — Software Factory V2 configuration
 
@@ -496,13 +494,13 @@
 - **Remaining blockers:** Native custom-profile invocation and model-identity verification.
 - **Next action:** Do not claim Factory V2 runtime enforcement until the smoke test passes in an OpenCode session that exposes the profiles.
 
-## Final documentation verification
+## Historical documentation verification (2026-11-10)
 
 This section records only commands actually run during the documentation session on 2026-11-10. It does not record a test run; a documentation-only task does not require rerunning the application suite.
 
 - **Markdown links:** `PASS` — 88 Markdown files scanned, excluding `.git`, `.venv`, `node_modules`, `local_data`, and `.pytest_cache`; all local relative links resolve.
 - **`git diff --check`:** `PASS` — exit 0; no tracked changes.
 - **Untracked whitespace:** `PASS` — `git diff --no-index --check` against an empty file over `docs/**/*.md` and `GLOSSARY.md`; no whitespace errors.
-- **Final `git status --short --branch`:** branch `phase-1/foundation`; no staged changes; the documentation baseline is untracked, alongside preserved untracked `.agents/`, `skills-lock.json`, and the three local structured-output source files. HEAD remains `e200aad34646f7b58cdd94db26ba735b2834aac5`.
+- **Historical `git status --short --branch`:** at that documentation session, the documentation baseline and CP4 files were untracked and HEAD was `e200aad34646f7b58cdd94db26ba735b2834aac5`. This is not the current repository state; see the 2026-11-11 evidence above.
 - **Contradiction review:** `PASS` — one factual correction was made to `docs/PROJECT_PLAN.md` (the model-generation endpoint is not OpenAI-compatible). The 37 decisions are distinct from the 24 open technical questions. No document treats a planned, local-only, or untracked capability as accepted or verified.
-- **Owner review:** Pending. No checkpoint is `ACCEPTED`.
+- **Owner review at that date:** Pending. CP4 acceptance was recorded later against commit e45a7aa.

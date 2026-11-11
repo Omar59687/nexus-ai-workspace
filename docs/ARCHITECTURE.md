@@ -2,7 +2,7 @@
 
 **Document role:** Verified current architecture and intended target architecture, kept separate.
 
-**Last verified:** 2026-11-10 against branch `phase-1/foundation`, HEAD `e200aad34646f7b58cdd94db26ba735b2834aac5`, plus local untracked files listed below.
+**Last verified:** 2026-11-11 against the isolated `phase-1/foundation` baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` and CP5 working diff. CP5 changes remain uncommitted and require owner review.
 
 **Rule:** A module is "implemented" only when code exists in the stated location. A module is "accepted" only when `docs/PROJECT_CHECKPOINTS.md` records tests, evidence, and review. Future modules must never be drawn or described as if they exist.
 
@@ -16,6 +16,7 @@ Windows host
 │   ├── GET /
 │   ├── GET /health
 │   ├── POST /llm/generate
+│   ├── POST /structured/generate (CP5 working diff; review verified)
 │   └── /tasks CRUD
 ├── Ollama service (host, default http://127.0.0.1:11434)
 └── Docker Compose
@@ -42,9 +43,10 @@ The application, Ollama, and tests run on the host. Only PostgreSQL is defined i
 | Generic structured-output engine | `src/nexus_ai/structured_output_pipeline.py` | Implemented and committed | Generate/validate/retry; max two attempts |
 | REST structured-output adapter | `src/nexus_ai/structured_outputs.py` | Implemented and committed | Pydantic schema, semantic validator, demo path |
 | LangChain structured demo | `scripts/try_langchain_structured.py` | Implemented and committed | Uses `ChatOllama`; not an API |
-| Schema registry | `src/nexus_ai/structured_schemas.py` | Local, untracked, unaccepted | `StructuredSchemaSpec`, `SCHEMA_REGISTRY`, lookup error |
-| Structured service | `src/nexus_ai/structured_service.py` | Local, untracked, unaccepted | Retry policy, metrics, rejection handling |
-| ChatOllama model adapter | `src/nexus_ai/model_adapters.py` | Local, untracked, unaccepted | Completion enforcement; provider error mapping |
+| Schema registry | `src/nexus_ai/structured_schemas.py` | Committed at e45; CP4 owner-accepted | `StructuredSchemaSpec`, `SCHEMA_REGISTRY`, lookup error |
+| Structured service | `src/nexus_ai/structured_service.py` | Committed at e45; CP4 owner-accepted | Retry policy, metrics, rejection handling |
+| ChatOllama model adapter | `src/nexus_ai/model_adapters.py` | Committed at e45; CP4 owner-accepted | Completion enforcement; provider error mapping |
+| Structured-output API | `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | CP5 working diff; focused tests and two review cycles pass; owner review pending | `/structured/generate`, configured Ollama dependency, sanitized errors, result and metrics schema |
 | Document intelligence | Not present | Not implemented | Planned for Phase 4 |
 | Memory system | Not present | Not implemented | Planned product capability |
 | Multi-agent orchestration | Not present | Not implemented | Planned for Phase 6 |
@@ -59,6 +61,7 @@ The application, Ollama, and tests run on the host. Only PostgreSQL is defined i
 | `GET` | `/` | Returns a welcome message |
 | `GET` | `/health` | Returns `{"status": "ok"}` |
 | `POST` | `/llm/generate` | Sends a prompt to Ollama; returns text, model, completion flag, and available metrics |
+| `POST` | `/structured/generate` | Uses the CP4 registry/service/adapter; returns validated result and available metrics; generic 404/422/502/503 errors |
 | `POST` | `/tasks` | Creates a workspace task; 201 |
 | `GET` | `/tasks` | Lists workspace tasks ordered by ID |
 | `GET` | `/tasks/{task_id}` | Returns one task or 404 |
@@ -129,10 +132,10 @@ scripts/try_langchain_structured.py
 
 The engine itself is provider-agnostic and accepts an injected `generate` callable. The committed adapter defines the REST schema and semantic validation. The demo is not exposed through FastAPI.
 
-#### Flow E — Local structured service (unaccepted)
+#### Flow E — Local structured generation API (CP4 owner-accepted; CP5 diff pending owner review)
 
 ```text
-Caller (no API route exists)
+Caller -> POST /structured/generate
   -> StructuredOutputService.generate(schema_name, prompt, model)
   -> get_schema_spec(schema_name)
   -> StructuredModelAdapter.generate_structured()
@@ -144,7 +147,7 @@ Caller (no API route exists)
   -> StructuredGenerationResult with aggregate metrics
 ```
 
-This flow exists only in untracked local files. It has no FastAPI route, no dedicated tests, and no confirmed independent review. Do not describe it as a production capability.
+The service and adapter are in owner-accepted baseline commit e45a7aa. The HTTP route and schemas are present in the current CP5 working diff and have deterministic tests plus two independent review cycles. The route is not included in the baseline commit or yet owner-accepted. No live Ollama call was run in this environment.
 
 ### 1.5 Persistence model
 

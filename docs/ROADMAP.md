@@ -4,7 +4,7 @@
 
 **Status:** The official 12-phase structure and numbering come from `docs/PROJECT_BLUEPRINT.md`. This document does not add phases, renumber phases, or amend the blueprint. It records actual status and maps Phase 3 internal checkpoints to the checkpoint ledger.
 
-**Last verified:** 2026-11-10.
+**Last verified:** 2026-11-11 against isolated baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` and the CP5 working diff.
 
 ## 1. Roadmap reconciliation rule
 
@@ -40,13 +40,13 @@ Phase 3 is the only phase with active implementation work. Its status is not "co
 | `P3-CP1` | Local Ollama integration and `/llm/generate` | `IMPLEMENTED` |
 | `P3-CP2` | Reproducible benchmark suite | `IMPLEMENTED` |
 | `P3-CP3` | Generic structured-output engine and REST adapter | `IMPLEMENTED` |
-| `P3-CP4` | Schema registry, structured service, model adapter | `REVIEW_PENDING` |
-| `P3-CP5` | FastAPI structured-output integration | `NOT_STARTED` |
-| `P3-CP6` | Dedicated service, adapter, and API tests | `NOT_STARTED` |
-| `P3-DEC1` | LangChain necessity decision | `NOT_STARTED` |
+| `P3-CP4` | Schema registry, structured service, model adapter | `ACCEPTED` by owner at `e45a7aa` |
+| `P3-CP5` | FastAPI structured-output integration | `VERIFIED` in isolated checkout; owner review pending |
+| `P3-CP6` | Dedicated service, adapter, and API tests | `BLOCKED` on PostgreSQL regression/Alembic check |
+| `P3-DEC1` | LangChain necessity decision | `PROPOSED`; owner decision pending |
 | `P3-QG` | Phase 3 quality gate | `BLOCKED` |
 
-Phase 3 has unresolved decisions TQ-01 to TQ-11 in `docs/PROJECT_PLAN.md`. The Phase 3 draft in `docs/PHASE3_COMPLETION_PLAN_DRAFT.md` is a proposal, not an approved plan.
+Phase 3 remains open and its quality gate is blocked. Checkpoint evidence and specific blockers are recorded in `docs/PROJECT_CHECKPOINTS.md` and `docs/P3_QG_EVIDENCE_2026-11-11.md`. The Phase 3 completion draft remains a proposal, not an approved plan.
 
 ## 4. Phase dependencies
 

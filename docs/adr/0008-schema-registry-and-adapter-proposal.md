@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 
-The proposed structured-output architecture couples a schema registry, a service with bounded validation retries, and a provider-specific model adapter. Local untracked files explore this shape, but the design is not accepted: it requires independent review, dedicated tests, a public API contract, and a decision on whether LangChain is required.
+The schema registry, bounded-retry service, and provider-specific adapter are implemented in baseline commit `e45a7aa` and CP4 was explicitly accepted by the owner. The HTTP integration is in the uncommitted CP5 working diff and is pending owner review. ADR-0010 records the proposed public contract; ADR-0011 records the proposed LangChain rationale. This architecture ADR remains proposed until the owner accepts the overall direction.
 
 ## Considered options
 
@@ -15,4 +15,4 @@ The proposed structured-output architecture couples a schema registry, a service
 - Schema validity proves structure only, not factual correctness.
 - The adapter must reject unverifiable completion and incomplete generations.
 - The service must not return a rejected result as success or fabricate metrics.
-- FastAPI integration must wait for review and an approved contract.
+- FastAPI integration exists in the CP5 working diff; it should not be treated as accepted until the owner reviews the patch.

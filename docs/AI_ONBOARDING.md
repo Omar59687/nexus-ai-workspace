@@ -29,13 +29,13 @@ git diff --stat
 git diff --cached --stat
 ```
 
-Expected state at the last documentation verification:
+Verified execution baseline for the current CP5/CP6 work:
 
 - Branch: `phase-1/foundation`
-- HEAD: `e200aad34646f7b58cdd94db26ba735b2834aac5`
-- No staged tracked changes
-- Known untracked work: `.agents/`, `skills-lock.json`, `src/nexus_ai/model_adapters.py`, `src/nexus_ai/structured_schemas.py`, `src/nexus_ai/structured_service.py`
-- Documentation baseline is also untracked pending owner review: `GLOSSARY.md`, `docs/AI_ONBOARDING.md`, `docs/ARCHITECTURE.md`, `docs/PROJECT_CHECKPOINTS.md`, `docs/PROJECT_PLAN.md`, `docs/ROADMAP.md`, and `docs/adr/`
+- Baseline commit: `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` on `phase-1/foundation`
+- Work is being performed in an isolated clone; the owner's Windows checkout is not mounted or modified
+- Owner-reported local untracked `.agents/` and `skills-lock.json` were not present in the clone and have not been overwritten
+- Current changes and verification evidence are exported separately before handoff
 
 The repository is the authority. If the branch, HEAD, or working tree differs from the checkpoint records, stop and investigate before editing. Preserve all uncommitted and untracked work.
 
@@ -50,15 +50,14 @@ Never read, print, copy, or commit `.env` or its contents. `.env.example` is saf
 3. Confirm its dependencies are satisfied.
 4. Confirm the owner has authorized work on it.
 
-At the last documentation verification:
+At the verified CP5/CP6 handoff:
 
-- **No checkpoint is `ACCEPTED`.**
 - The active workstream is Phase 3.
-- `P3-CP4` (schema registry, structured service, model adapter) is `REVIEW_PENDING`.
-- `P3-CP5` (FastAPI structured-output integration) is `NOT_STARTED`.
-- `P3-CP6` (dedicated service, adapter, and API tests) is `NOT_STARTED`.
+- `P3-CP4` is owner-accepted at commit `e45a7aa`; Windows validation is owner-reported, not rerun in this Linux environment.
+- `P3-CP5` is implemented and independently reviewed in an isolated, uncommitted diff; owner review is pending.
+- `P3-CP6` is blocked on PostgreSQL-backed full regression and Alembic checks in this environment.
 - `P3-QG` (Phase 3 quality gate) is `BLOCKED`.
-- The recommended next checkpoint is completing the independent review of `P3-CP4`, then adding dedicated tests. Do not jump to FastAPI integration first.
+- The next action is owner review of the exported patch and a Windows full-suite/database rerun. Do not claim Phase 3 acceptance.
 
 ## 4. Respect file ownership
 
@@ -137,8 +136,8 @@ Do not:
 - **Approved direction:** workspace/project management, dynamic multi-agent orchestration, personal and project memory, Arabic and English, local-first AI with optional cloud providers, document intelligence and grounded answers, structured extraction with semantic validation, PostgreSQL and proposed pgvector, durable workflows, RBAC, audit logging, human approvals, observability, local development with future self-hosted/SaaS-ready architecture, and a deferred frontend.
 - **The 37 approved decisions are recorded in `docs/PROJECT_PLAN.md`.** Read the source note there: the repository did not contain a separate 37-item decision log, so the register is an atomic restatement of the owner-approved brief plus blueprint principles.
 - **Open technical questions are listed separately in `docs/PROJECT_PLAN.md`.** TQ-01 to TQ-08 correspond to the Phase 3 draft's D1-D8.
-- **Implemented:** FastAPI foundation, PostgreSQL task CRUD, Ollama generation, benchmark subsystem, committed structured-output engine and REST adapter.
-- **Local but unaccepted:** schema registry, structured service, and ChatOllama adapter files described in `P3-CP4`.
+- **Implemented:** FastAPI foundation, PostgreSQL task CRUD, Ollama generation, benchmark subsystem, committed structured-output engine and REST adapter, and owner-accepted CP4 schema registry/service/adapter at e45.
+- **CP5 working diff:** `/structured/generate` and deterministic API tests are implemented and independently reviewed, pending owner review; see the checkpoint ledger and QG evidence.
 - **Not implemented:** RAG, memory, agent orchestration, durable execution, RBAC, audit logging, human approval enforcement, cost observability, frontend, SaaS tenancy.
 
 ## 11. Recommended resume sequence

@@ -2,9 +2,9 @@
 
 **Document role:** Master plan and requirements baseline.
 
-**Status:** Documentation baseline for owner review. This document does not authorize implementation, dependency installation, commits, or phase closure.
+**Status:** Operational plan reconciled on 2026-11-11. CP5 changes remain uncommitted for owner review; this does not imply Phase 3 gate acceptance.
 
-**Repository identity at last verification:** branch `phase-1/foundation`, HEAD `e200aad34646f7b58cdd94db26ba735b2834aac5`, last verified 2026-11-10.
+**Repository identity:** isolated branch `phase-1/foundation`, baseline `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4`; see the checkpoint evidence for the uncommitted CP5/CP6 diff.
 
 **Authoritative sources:** `docs/PROJECT_BLUEPRINT.md`, `docs/PHASE3_COMPLETION_PLAN_DRAFT.md`, `docs/BENCHMARKS.md`, committed source and tests, and the owner-approved direction recorded for this documentation task. Where this plan and the code disagree, the code and the owner's decision prevail. Update this plan instead of relying on chat history.
 
@@ -151,11 +151,12 @@ Implemented means code exists in the repository at the stated commit. It does no
 | Ollama HTTP client and `/llm/generate` endpoint | `src/nexus_ai/ollama.py`, `tests/test_ollama_client.py`, `tests/test_llm_api.py`, commit `9b8227e` | Implemented; no formal phase-gate acceptance recorded |
 | Reproducible local benchmark subsystem | `src/nexus_ai/benchmark/`, `benchmarks/cases.json`, `scripts/run_llm_benchmark.py`, commit `17eb240` | Implemented; benchmark results are local evidence |
 | Generic structured-output generate/validate/retry engine and REST adapter | `src/nexus_ai/structured_output_pipeline.py`, `src/nexus_ai/structured_outputs.py`, commit `328c823` | Implemented and committed; historical regression coverage reported |
-| Local schema registry, structured service, and ChatOllama adapter | `src/nexus_ai/structured_schemas.py`, `src/nexus_ai/structured_service.py`, `src/nexus_ai/model_adapters.py` | Implementation reported complete; files are untracked; reviews not confirmed; not accepted |
+| Local schema registry, structured service, and ChatOllama adapter | `src/nexus_ai/structured_schemas.py`, `src/nexus_ai/structured_service.py`, `src/nexus_ai/model_adapters.py` | In baseline e45; CP4 accepted by owner; owner-reported Windows checks recorded in checkpoint ledger |
+| Registry-backed structured generation API | `POST /structured/generate`; `src/nexus_ai/main.py`, `src/nexus_ai/schemas.py` | Implemented in uncommitted CP5 diff; 300 focused tests pass; two review cycles clear; owner review pending |
 | Documentation foundation | This document set | Implemented; owner review pending |
 | Software Factory V2 profiles | `.opencode/agents/`, `docs/SOFTWARE_FACTORY_V2.md`, commit `38a2813` | Configured; native smoke test reported blocked |
 
-The only model-generation endpoint is `POST /llm/generate`; there is no structured-output endpoint, document endpoint, memory endpoint, agent endpoint, or workflow endpoint.
+The model-generation endpoints are `POST /llm/generate` and the uncommitted CP5 `POST /structured/generate`. There is no document endpoint, memory endpoint, agent endpoint, or workflow endpoint.
 
 ## 7. Proposed technical design (not implemented)
 
@@ -226,7 +227,7 @@ Everything in this section is a proposal unless an ADR marked accepted says othe
 | PostgreSQL 17 | Implemented | Operational database; proposed pgvector extension point |
 | Docker Compose | Implemented for PostgreSQL only | Reproducible local database service |
 | Ollama | Implemented | Local model runtime without paid APIs |
-| LangChain Core and `langchain-ollama` | Dependency present; demo/local adapter only | Structured-output exploration; production adoption is unresolved |
+| LangChain Core and `langchain-ollama` | Dependency and CP4 adapter present; used by uncommitted CP5 route | Proposed local structured-output integration; ADR-0011 owner decision and dependency/resource review remain open |
 | Pytest and FastAPI TestClient | Implemented | Unit and API testing |
 | React, TypeScript, Vite | Proposed, deferred | Frontend phase is blocked by owner decision |
 | pgvector | Proposed | Keeps vector search in PostgreSQL if validated |
@@ -370,19 +371,18 @@ These are not product decisions. They require technical evidence, owner approval
 ## 14. Current state summary
 
 - **Branch:** `phase-1/foundation`
-- **HEAD:** `e200aad34646f7b58cdd94db26ba735b2834aac5` (`docs: add Phase 3 completion plan draft`)
-- **Working tree:** no staged or unstaged tracked changes at initial verification; untracked `.agents/`, `skills-lock.json`, `src/nexus_ai/model_adapters.py`, `src/nexus_ai/structured_schemas.py`, and `src/nexus_ai/structured_service.py`
-- **PostgreSQL:** Compose service `nexus-ai-postgres` reported healthy at `127.0.0.1:5433` during the documentation session
-- **Historical regression:** owner-reported 162 passed after PostgreSQL was restored; not rerun in this documentation-only session
-- **Active checkpoint:** `P3-CP4` is `REVIEW_PENDING`
-- **Recommended next checkpoint:** complete the independent review of `P3-CP4`, then add dedicated service/adapter tests before `P3-CP5` FastAPI integration
-- **No checkpoint is `ACCEPTED`**
+- **Baseline:** `e45a7aa2a7b7d69dea808b6811e69ca1afd74ec4` on `phase-1/foundation`; the owner's Windows checkout was not touched
+- **Working tree:** CP5 source/tests and synchronized documentation are modified/untracked in this isolated clone; owner-local `.agents/` and `skills-lock.json` were not present and have not been overwritten
+- **PostgreSQL:** unavailable in this environment; no server was listening at test port 59999
+- **CP4:** owner-accepted; owner reports 398 passed and `pip check`, `alembic check`, and `git diff --check` passed on Windows
+- **CP5:** 300 focused tests passed; full suite had 419 passed and four PostgreSQL connection failures; owner review pending
+- **Next action:** owner reviews exported CP5 patch, then reruns full tests and database checks locally; no phase closure is claimed
 
 ## 15. Unapproved future ideas
 
 The following are not approved commitments. Some are roadmap scope, but they are still unimplemented and must not be described as current capabilities:
 
-- Production adoption of LangChain beyond the current demo/local adapter (TQ-04).
+- Owner acceptance of the LangChain adapter use in the CP5 structured-output API, plus dependency/resource review (TQ-04; proposed ADR-0011).
 - Adoption of pgvector, a specific embedding model, or a specific vector index (TQ-14).
 - Changing the production default model away from `llama3.2:latest` (TQ-06).
 - Selecting a durable workflow or queue engine (TQ-12).

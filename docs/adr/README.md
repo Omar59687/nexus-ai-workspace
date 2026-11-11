@@ -17,6 +17,8 @@ ADRs describe decisions, not implementation status. Check `docs/PROJECT_CHECKPOI
 | [0007](0007-pgvector-proposed-for-vector-search.md) | pgvector proposed for vector search | Proposed |
 | [0008](0008-schema-registry-and-adapter-proposal.md) | Schema registry and model adapter for structured outputs | Proposed |
 | [0009](0009-durable-workflow-engine-deferred.md) | Durable workflow engine selection deferred | Proposed |
+| [0010](0010-structured-generation-http-contract.md) | Minimal registry-backed structured-generation HTTP contract | Proposed |
+| [0011](0011-langchain-chatollama-adapter-rationale.md) | Proposed use of LangChain ChatOllama behind the structured adapter | Proposed |
 
 ## Status vocabulary
 
