@@ -3,6 +3,7 @@ import csv
 import hashlib
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -219,6 +220,20 @@ class BenchmarkDatasetTests(unittest.TestCase):
                 with self.assertRaisesRegex(FixtureError,"safety limit"):
                     import_review_sheet(dataset,sheet,expected_reviewer_id="reviewer-a")
 
+    def test_review_import_refuses_symlink_input(self):
+        dataset=_dataset()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            target=root/"actual.csv"
+            target.write_text("not a review sheet",encoding="utf-8")
+            link=root/"review.csv"
+            try:
+                link.symlink_to(target)
+            except (OSError,NotImplementedError):
+                self.skipTest("symlinks unavailable")
+            with self.assertRaisesRegex(FixtureError,"unsafe|symlink"):
+                import_review_sheet(dataset,link,expected_reviewer_id="reviewer-a")
+
     def test_review_import_accepts_document_evidence_over_default_csv_field_limit(self):
         dataset=_dataset()
         text="x"*150_000
@@ -253,6 +268,7 @@ class BenchmarkDatasetTests(unittest.TestCase):
             chunk["content_sha256"]=hashlib.sha256(chunk["text"].encode()).hexdigest()
         for query in holdout["queries"]:
             query["split"]="holdout"; query["question_id"]="holdout-"+query["question_id"]
+            query["text"]="holdout " + query["text"]
         validate_split_pair(dev,holdout)
         holdout["documents"][0]["text"]=dev["documents"][0]["text"]
         holdout["documents"][0]["content_sha256"]=hashlib.sha256(holdout["documents"][0]["text"].encode()).hexdigest()
@@ -261,6 +277,86 @@ class BenchmarkDatasetTests(unittest.TestCase):
         holdout["chunks"][0]["content_sha256"]=holdout["documents"][0]["content_sha256"]
         with self.assertRaisesRegex(FixtureError,"normalized document text"):
             validate_split_pair(dev,holdout)
+
+    def test_split_pair_rejects_shared_question_id_even_when_text_differs(self):
+        dev=_dataset()
+        holdout=copy.deepcopy(dev)
+        holdout["split"]="holdout"
+        for doc in holdout["documents"]:
+            doc["split"]="holdout"; doc["document_id"]="h-"+doc["document_id"]
+            doc["version_id"]="h-"+doc["version_id"]; doc["source_ref"]="h/"+doc["source_ref"]
+            doc["text"]="held out " + doc["text"]
+            doc["content_sha256"]=hashlib.sha256(doc["text"].encode()).hexdigest()
+        for chunk in holdout["chunks"]:
+            chunk["split"]="holdout"; chunk["document_id"]="h-"+chunk["document_id"]
+            chunk["version_id"]="h-"+chunk["version_id"]; chunk["chunk_id"]="h-"+chunk["chunk_id"]
+            chunk["text"]="held out " + chunk["text"]; chunk["end_char"]=len(chunk["text"])
+            chunk["content_sha256"]=hashlib.sha256(chunk["text"].encode()).hexdigest()
+        for query in holdout["queries"]:
+            query["split"]="holdout"; query["question_id"]="h-"+query["question_id"]
+            query["text"]="held out " + query["text"]
+        validate_split_pair(dev,holdout)
+        holdout["queries"][0]["question_id"]=dev["queries"][0]["question_id"]
+        with self.assertRaisesRegex(FixtureError,"question_id"):
+            validate_split_pair(dev,holdout)
+
+    def test_split_pair_rejects_normalized_query_text_leakage(self):
+        dev=_dataset()
+        holdout=copy.deepcopy(dev)
+        holdout["split"]="holdout"
+        for doc in holdout["documents"]:
+            doc["split"]="holdout"; doc["document_id"]="h-"+doc["document_id"]
+            doc["version_id"]="h-"+doc["version_id"]; doc["source_ref"]="h/"+doc["source_ref"]
+            doc["text"]="held out " + doc["text"]
+            doc["content_sha256"]=hashlib.sha256(doc["text"].encode()).hexdigest()
+        for chunk in holdout["chunks"]:
+            chunk["split"]="holdout"; chunk["document_id"]="h-"+chunk["document_id"]
+            chunk["version_id"]="h-"+chunk["version_id"]; chunk["chunk_id"]="h-"+chunk["chunk_id"]
+            chunk["text"]="held out " + chunk["text"]; chunk["end_char"]=len(chunk["text"])
+            chunk["content_sha256"]=hashlib.sha256(chunk["text"].encode()).hexdigest()
+        for query in holdout["queries"]:
+            query["split"]="holdout"; query["question_id"]="h-"+query["question_id"]
+            query["text"]="held out " + query["text"]
+        validate_split_pair(dev,holdout)
+        holdout["queries"][0]["text"]="  " + dev["queries"][0]["text"].upper() + "  "
+        with self.assertRaisesRegex(FixtureError,"normalized query text"):
+            validate_split_pair(dev,holdout)
+
+    def test_dataset_release_hash_is_order_independent(self):
+        dataset=_dataset()
+        reversed_dataset=copy.deepcopy(dataset)
+        reversed_dataset["documents"].reverse()
+        reversed_dataset["chunks"].reverse()
+        reversed_dataset["queries"].reverse()
+        self.assertEqual(dataset_release_sha256(dataset),dataset_release_sha256(reversed_dataset))
+
+    def test_reparse_parent_is_rejected_before_review_sheet_creation(self):
+        dataset=_dataset()
+        with tempfile.TemporaryDirectory() as directory:
+            parent=Path(directory)/"parent"
+            parent.mkdir()
+            destination=parent/"review.csv"
+            original=benchmark_dataset._is_reparse_component
+            with patch.object(benchmark_dataset,"_is_reparse_component",side_effect=lambda p: p==parent or original(p)):
+                with self.assertRaisesRegex(ValueError,"reparse point"):
+                    export_review_sheet(dataset,destination,reviewer_id="reviewer-a")
+            self.assertFalse(destination.exists())
+
+    def test_no_clobber_json_publication_is_complete_and_refuses_existing_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target=Path(directory)/"dataset.json"
+            result=benchmark_dataset.write_json_no_clobber({"items":[1,2],"text":"مرحبا"},target)
+            self.assertEqual(result,target)
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")),{"items":[1,2],"text":"مرحبا"})
+            with self.assertRaises(FileExistsError):
+                benchmark_dataset.write_json_no_clobber({"replacement":True},target)
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")),{"items":[1,2],"text":"مرحبا"})
+
+    def test_output_path_rejects_traversal_before_creating_file(self):
+        dataset=_dataset()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError,"'..'"):
+                export_review_sheet(dataset,Path(directory)/".."/"escape.csv",reviewer_id="reviewer-a")
 
 
 if __name__=="__main__":

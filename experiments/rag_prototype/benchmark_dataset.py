@@ -7,10 +7,13 @@ submitted until independent agreement or an explicit adjudicator resolution.
 from __future__ import annotations
 
 import csv
+import errno
 import hashlib
 import io
 import json
 import os
+import stat
+import tempfile
 import threading
 import unicodedata
 from contextlib import contextmanager
@@ -209,6 +212,15 @@ def validate_split_pair(dev: Mapping[str, Any], holdout: Mapping[str, Any]) -> N
     holdout_chunk_hashes = {hashlib.sha256(normalized(row["text"]).encode("utf-8")).hexdigest() for row in holdout_chunks.values()}
     if chunk_hashes & holdout_chunk_hashes:
         raise FixtureError("dev and holdout share normalized chunk text")
+    dev_queries = dev_data["_indexes"]["queries"]
+    holdout_queries = holdout_data["_indexes"]["queries"]
+    if set(dev_queries) & set(holdout_queries):
+        raise FixtureError("dev and holdout share question_id")
+    query_text = lambda row: normalized(row["text"])
+    dev_query_hashes = {hashlib.sha256(query_text(row).encode("utf-8")).hexdigest() for row in dev_queries.values()}
+    holdout_query_hashes = {hashlib.sha256(query_text(row).encode("utf-8")).hexdigest() for row in holdout_queries.values()}
+    if dev_query_hashes & holdout_query_hashes:
+        raise FixtureError("dev and holdout share normalized query text")
 
 
 def export_review_sheet(
@@ -603,8 +615,42 @@ def write_json_no_clobber(value: Any, path: str | Path) -> Path:
 
 
 def _read_bounded_bytes(path: str | Path, limit: int, label: str) -> bytes:
-    with Path(path).open("rb") as stream:
-        payload = stream.read(limit + 1)
+    try:
+        destination = _safe_output_path(path)
+    except ValueError as exc:
+        raise FixtureError(f"{label} path is unsafe: {exc}") from exc
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    parent_fd = None
+    fd = None
+    try:
+        if os.name == "posix" and os.open in os.supports_dir_fd:
+            parent_fd = _open_output_parent(destination)
+            fd = os.open(destination.name, flags, dir_fd=parent_fd)
+        else:
+            fd = os.open(destination, flags)
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            os.close(fd)
+            fd = None
+            raise FixtureError(f"{label} must be a regular file")
+        stream = os.fdopen(fd, "rb")
+        fd = None
+        with stream:
+            payload = stream.read(limit + 1)
+        if os.name != "posix":
+            _safe_output_path(destination)
+            current = destination.stat()
+            if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+                raise FixtureError(f"{label} changed while being read")
+    except FixtureError:
+        raise
+    except OSError as exc:
+        raise FixtureError(f"cannot safely read {label}: {exc}") from exc
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if parent_fd is not None:
+            os.close(parent_fd)
     if len(payload) > limit:
         raise FixtureError(f"{label} exceeds {limit} byte safety limit")
     return payload
@@ -615,47 +661,124 @@ def _safe_output_path(path: str | Path) -> Path:
     if ".." in requested.parts:
         raise ValueError("output path must not contain '..'")
     destination = requested.absolute()
-    if not destination.name or destination.is_symlink():
-        raise ValueError("output must name a non-symlink file")
+    if not destination.name or _is_reparse_component(destination):
+        raise ValueError("output must name a non-reparse-point file")
     current = Path(destination.parent.anchor)
     for component in destination.parent.parts[1:]:
         current /= component
-        if current.is_symlink():
-            raise ValueError("output path contains a symlinked parent")
+        if _is_reparse_component(current):
+            raise ValueError("output path contains a symlinked parent or other reparse point")
     if not destination.parent.is_dir():
         raise ValueError("output parent directory must already exist")
     return destination
 
 
 def _create_exclusive_file(destination: Path, payload: bytes) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    if os.name == "posix" and os.open in os.supports_dir_fd:
-        parent_fd = os.open(destination.parent.anchor, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    # Stage the complete payload beside the destination, then publish it in one
+    # filesystem operation. Hard-link publication is exclusive: it cannot
+    # replace an existing destination (including a symlink).
+    _safe_output_path(destination)
+    if (
+        os.name == "posix"
+        and os.open in os.supports_dir_fd
+        and os.link in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+    ):
+        parent_fd = _open_output_parent(destination)
+        temp_name = f".{destination.name}.{os.urandom(8).hex()}.tmp"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         try:
-            for component in destination.parent.parts[1:]:
-                child_fd = os.open(
-                    component,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=parent_fd,
-                )
-                os.close(parent_fd)
-                parent_fd = child_fd
-            fd = os.open(destination.name, flags, 0o600, dir_fd=parent_fd)
+            fd = os.open(temp_name, flags, 0o600, dir_fd=parent_fd)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(
+                temp_name,
+                destination.name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
         finally:
+            try:
+                os.unlink(temp_name, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
             os.close(parent_fd)
-    else:
-        fd = os.open(destination, flags, 0o600)
+        return
+
+    fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+    temporary = Path(temp_name)
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-    except BaseException:
-        try:
-            destination.unlink()
-        except OSError:
-            pass
+        _safe_output_path(destination)
+        os.link(temporary, destination)
+    except FileExistsError:
         raise
+    except OSError as exc:
+        # Some Windows filesystems do not permit hard links. Preserve exclusive
+        # creation and no-follow behavior there; the path-based fallback cannot
+        # eliminate same-user directory replacement races.
+        if os.name != "nt" or exc.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+        _safe_output_path(destination)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        out_fd = os.open(destination, flags, 0o600)
+        try:
+            with os.fdopen(out_fd, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            try:
+                destination.unlink()
+            except OSError:
+                pass
+            raise
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _open_output_parent(destination: Path) -> int:
+    """Open the existing output directory chain without following links."""
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(destination.parent.anchor, os.O_RDONLY | directory_flag | nofollow_flag)
+    try:
+        for component in destination.parent.parts[1:]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_flag | nofollow_flag,
+                dir_fd=fd,
+            )
+            os.close(fd)
+            fd = next_fd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _is_reparse_component(path: Path) -> bool:
+    """Recognize symlinks and Windows junction/reparse components."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    is_junction = getattr(path, "is_junction", None)
+    if path.is_symlink() or (callable(is_junction) and is_junction()):
+        return True
+    if os.name == "nt":
+        flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        return bool(getattr(info, "st_file_attributes", 0) & flag)
+    return False
 
 
 def build_corpus_manifest(

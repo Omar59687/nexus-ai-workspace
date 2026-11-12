@@ -19,6 +19,7 @@ from experiments.rag_prototype.evaluation import (
     validate_fixture,
     write_report,
 )
+from experiments.rag_prototype import ChunkHit
 
 
 FIXTURE = Path(__file__).parents[1] / "benchmarks" / "rag_eval_synthetic_dev_v2.json"
@@ -294,6 +295,47 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertTrue(measured["performance"]["measured"])
         self.assertIn("platform", measured["performance"]["system"])
         self.assertIn("mean_query_latency_ms", measured["performance"]["by_strategy"]["bm25_raw"])
+
+    def test_declared_score_ties_are_sorted_by_chunk_id(self):
+        from experiments.rag_prototype.evaluation import _chunks
+        chunks=_chunks(self.fixture,"dev")
+        reverse=tuple(reversed(chunks))
+        spec=RetrieverSpec(
+            lambda _query,_k: tuple(ChunkHit(chunk,1.0) for chunk in reverse),
+            "score descending, chunk ID ascending",
+        )
+        report=run_evaluation(self.fixture,retrievers={"tied":spec},k=4)
+        first=next(iter(report["strategies"]["tied"]["query_results"].values()))
+        ids=[row["chunk_id"] for row in first["ranked_chunks"]]
+        self.assertEqual(ids,sorted(ids))
+
+    def test_undeclared_custom_order_is_preserved_and_reported_honestly(self):
+        from experiments.rag_prototype.evaluation import _chunks
+        chunks=tuple(reversed(_chunks(self.fixture,"dev")))
+        spec=RetrieverSpec(lambda _query,_k: tuple(ChunkHit(chunk,1.0) for chunk in chunks),"model-defined order")
+        report=run_evaluation(self.fixture,retrievers={"custom":spec},k=4)
+        row=next(iter(report["strategies"]["custom"]["query_results"].values()))
+        self.assertEqual([hit["chunk_id"] for hit in row["ranked_chunks"]],[chunk.chunk_id for chunk in chunks])
+        self.assertEqual(report["strategies"]["custom"]["diagnostics"]["ordering_policy"],"model-defined order")
+
+    def test_ranked_result_provenance_includes_source_version_and_content_hashes(self):
+        fixture=copy.deepcopy(self.fixture)
+        fixture["documents"][0]["source_ref"]="corpus://annual-report/2025"
+        report=run_evaluation(fixture,k=4)
+        result=next(iter(report["strategies"]["bm25_raw"]["query_results"].values()))
+        item=next(row for row in result["ranked_chunks"] if row["document_id"]==fixture["documents"][0]["document_id"])
+        self.assertEqual(item["source_ref"],"corpus://annual-report/2025")
+        self.assertEqual(len(item["document_version_id"]),2)
+        self.assertEqual(len(item["document_sha256"]),64)
+        self.assertEqual(len(item["chunk_sha256"]),64)
+        self.assertLess(item["start_char"],item["end_char"])
+
+    def test_all_no_answer_false_positives_are_retained_as_query_diagnostics(self):
+        report=run_evaluation(self.fixture,retrievers={"always-return":lambda _query,_k:["chunk-dev-en-revenue"]})
+        no_answer=report["strategies"]["always-return"]["no_answer"]
+        self.assertEqual(no_answer["false_positive_queries"],1)
+        self.assertEqual(no_answer["results"]["q-dev-en-unanswerable"]["false_positive"],True)
+        self.assertEqual(no_answer["results"]["q-dev-en-unanswerable"]["abstained"],False)
 
 
 if __name__ == "__main__":

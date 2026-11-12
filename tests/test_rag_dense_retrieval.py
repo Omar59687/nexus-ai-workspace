@@ -35,6 +35,19 @@ class FakeEncoder:
         return tuple((1.0, 0.0) for _ in texts)
 
 
+class InvalidEncoder(FakeEncoder):
+    def __init__(self, *, passage=None, query=None):
+        super().__init__()
+        self.passage=passage
+        self.query=query
+
+    def encode(self,texts,*,kind):
+        configured=self.passage if kind=="passage" else self.query
+        if configured is not None:
+            return tuple(configured for _ in texts)
+        return super().encode(texts,kind=kind)
+
+
 def _two_chunks():
     return (
         Chunk("a.txt","a","v1","a",0,5,1,1,(),"alpha"),
@@ -131,6 +144,27 @@ class DenseRetrievalTests(unittest.TestCase):
         except ImportError:
             with self.assertRaises(DenseRuntimeUnavailable):
                 LocalE5Encoder()
+
+    def test_duplicate_chunk_ids_fail_before_optional_encoder_work(self):
+        encoder=FakeEncoder()
+        with self.assertRaisesRegex(ValueError,"duplicate chunk IDs"):
+            build_dense_hybrid_retrievers((*_two_chunks(),_two_chunks()[0]),encoder)
+        self.assertEqual(encoder.passage_count,0)
+
+    def test_invalid_passage_vectors_fail_during_index_construction(self):
+        for vector in ((0.0,0.0),(float("nan"),1.0)):
+            encoder=InvalidEncoder(passage=vector)
+            with self.subTest(vector=vector),self.assertRaises(ValueError):
+                build_dense_hybrid_retrievers(_two_chunks(),encoder)
+        ragged=FakeEncoder()
+        ragged.encode=lambda texts,*,kind: ((1.0,0.0),(1.0,2.0,3.0)) if kind=="passage" else ((1.0,0.0),)
+        with self.assertRaisesRegex(ValueError,"dimension"):
+            build_dense_hybrid_retrievers(_two_chunks(),ragged)
+
+    def test_invalid_query_vector_fails_closed_before_ranking(self):
+        retrievers=build_dense_hybrid_retrievers(_two_chunks(),InvalidEncoder(query=(0.0,0.0)))
+        with self.assertRaisesRegex(ValueError,"zero vector"):
+            retrievers["dense_e5_small"].retrieve("alpha",1)
 
 
 if __name__=="__main__":

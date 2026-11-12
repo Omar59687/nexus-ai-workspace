@@ -31,6 +31,30 @@ class DenseRuntimeUnavailable(RuntimeError):
     """Raised if the optional embedding runtime or local weights are unavailable."""
 
 
+def _validated_vector(vector: Any, *, label: str, dimensions: int | None = None) -> tuple[float, ...]:
+    if isinstance(vector, (str, bytes)):
+        raise ValueError(f"{label} must be a numeric vector")
+    try:
+        values = tuple(vector)
+    except TypeError as exc:
+        raise ValueError(f"{label} must be a numeric vector") from exc
+    if not values or len(values) > 4_096:
+        raise ValueError(f"{label} dimensions must be between 1 and 4096")
+    if dimensions is not None and len(values) != dimensions:
+        raise ValueError(f"{label} dimension does not match passage embeddings")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        for value in values
+    ):
+        raise ValueError(f"{label} must contain only finite numeric values")
+    converted = tuple(float(value) for value in values)
+    if not any(value != 0.0 for value in converted):
+        raise ValueError(f"{label} must not be a zero vector")
+    return converted
+
+
 class LocalE5Encoder:
     """Pinned E5-small adapter with local-files-only loading and required prefixes."""
 
@@ -115,6 +139,8 @@ def build_dense_hybrid_retrievers(
         raise ValueError("max_dense_chunks must be a positive integer")
     if len(chunks) > max_dense_chunks:
         raise ValueError("dense corpus exceeds max_dense_chunks before embedding")
+    if len({chunk.chunk_id for chunk in chunks}) != len(chunks):
+        raise ValueError("duplicate chunk IDs are not allowed")
     for name, value in (
         ("minimum_score", minimum_score),
         ("hybrid_minimum_score", hybrid_minimum_score),
@@ -131,10 +157,14 @@ def build_dense_hybrid_retrievers(
         passage_vectors_list.extend(
             encoder.encode([chunk.text for chunk in chunks[start:start + batch_size]], kind="passage")
         )
-    passage_vectors = tuple(passage_vectors_list)
-    embedding_seconds = time.perf_counter() - embedding_started
-    if len(passage_vectors) != len(chunks):
+    if len(passage_vectors_list) != len(chunks):
         raise ValueError("encoder returned the wrong number of passage embeddings")
+    first = _validated_vector(passage_vectors_list[0], label="passage embedding")
+    passage_vectors = (first, *(
+        _validated_vector(vector, label="passage embedding", dimensions=len(first))
+        for vector in passage_vectors_list[1:]
+    ))
+    embedding_seconds = time.perf_counter() - embedding_started
     vectors = {chunk.chunk_id: vector for chunk, vector in zip(chunks, passage_vectors)}
     chunk_by_id = {chunk.chunk_id: chunk for chunk in chunks}
     lexical = BM25Index(chunks)
@@ -151,13 +181,19 @@ def build_dense_hybrid_retrievers(
     }
 
     def dense(query: str, k: int) -> tuple[ChunkHit, ...]:
-        query_vector = encoder.encode([query], kind="query")[0]
+        encoded = encoder.encode([query], kind="query")
+        if len(encoded) != 1:
+            raise ValueError("encoder returned the wrong number of query embeddings")
+        query_vector = _validated_vector(encoded[0], label="query embedding", dimensions=len(first))
         ranked = exact_cosine(query_vector, vectors, top_k=k)
         return tuple(ChunkHit(chunk_by_id[item.item_id], item.score) for item in ranked)
 
     def hybrid(query: str, k: int) -> tuple[ChunkHit, ...]:
         candidate_depth = min(len(chunks), max(20, k))
-        query_vector = encoder.encode([query], kind="query")[0]
+        encoded = encoder.encode([query], kind="query")
+        if len(encoded) != 1:
+            raise ValueError("encoder returned the wrong number of query embeddings")
+        query_vector = _validated_vector(encoded[0], label="query embedding", dimensions=len(first))
         dense_ids = [item.item_id for item in exact_cosine(query_vector, vectors, top_k=candidate_depth)]
         lexical_ids = [hit.chunk.chunk_id for hit in lexical.search(query, top_k=candidate_depth)]
         fused = reciprocal_rank_fusion([lexical_ids, dense_ids], top_k=k, rank_constant=rrf_constant)

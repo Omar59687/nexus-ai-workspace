@@ -39,6 +39,18 @@ class FixtureError(ValueError):
     """Raised when the evaluation fixture is ambiguous or inconsistent."""
 
 
+_CANONICAL_SCORE_POLICIES = {
+    "score descending, chunk ID ascending",
+    "BM25 score descending, chunk ID ascending",
+    "cosine descending, chunk ID ascending",
+    "RRF score descending, chunk ID ascending",
+}
+
+
+def _score_tie_policy_is_canonical(policy: str) -> bool:
+    return policy in _CANONICAL_SCORE_POLICIES
+
+
 @dataclass(frozen=True)
 class RetrieverSpec:
     """A retriever plus honest ordering and abstention metadata.
@@ -483,6 +495,12 @@ def run_evaluation(
             raw_hits = list(retrieve(question["text"], k))
             if measure_latency:
                 query_durations_ms[question["question_id"]] = (time.perf_counter_ns() - query_started) / 1_000_000
+            # Enforce declared score ordering instead of reporting a tie policy
+            # that a custom retriever did not actually follow.
+            if _score_tie_policy_is_canonical(spec.tie_policy) and all(
+                hasattr(hit, "chunk") and hasattr(hit, "score") for hit in raw_hits
+            ):
+                raw_hits.sort(key=lambda hit: (-float(hit.score), hit.chunk.chunk_id))
             ranked_ids = [hit.chunk.chunk_id if hasattr(hit, "chunk") else hit for hit in raw_hits]
             if any(not isinstance(item_id, str) for item_id in ranked_ids):
                 raise ValueError(f"strategy {strategy_name} returned a non-string chunk ID")
@@ -504,23 +522,56 @@ def run_evaluation(
                 ranked_ids = [item_id for item_id in ranked_ids if hit_scores[item_id] >= spec.minimum_score]
             unjudged = [item_id for item_id in ranked_ids if item_id not in set(question["judged_chunk_ids"])]
             unjudged_count += len(unjudged)
-            provenance = [
-                {
+            doc_by_id = {row["document_id"]: row for row in fixture["documents"]}
+            chunk_by_id = {row["chunk_id"]: row for row in fixture["chunks"]}
+            provenance = []
+            for rank, item_id in enumerate(ranked_ids, start=1):
+                chunk = available[item_id]
+                document = doc_by_id[chunk.document_id]
+                fixture_chunk = chunk_by_id[item_id]
+                hit = next(
+                    (
+                        candidate
+                        for candidate in raw_hits
+                        if getattr(getattr(candidate, "chunk", None), "chunk_id", None) == item_id
+                    ),
+                    None,
+                )
+                row = {
                     "rank": rank,
                     "chunk_id": item_id,
-                    "document_id": available[item_id].document_id,
-                    "document_version_id": available[item_id].version_id,
-                    "source": available[item_id].source,
-                    "document_sha256": hashlib.sha256(
-                        next(d["text"] for d in fixture["documents"] if d["document_id"] == available[item_id].document_id).encode("utf-8")
-                    ).hexdigest(),
-                    "evidence_language": next(c["language"] for c in fixture["chunks"] if c["chunk_id"] == item_id),
-                    "start_char": available[item_id].start_char,
-                    "end_char": available[item_id].end_char,
+                    "document_id": chunk.document_id,
+                    "document_version_id": chunk.version_id,
+                    "source": chunk.source,
+                    "source_ref": document.get("source_ref", document.get("source", chunk.source)),
+                    "document_sha256": hashlib.sha256(document["text"].encode("utf-8")).hexdigest(),
+                    "chunk_sha256": hashlib.sha256(chunk.text.encode("utf-8")).hexdigest(),
+                    "evidence_language": fixture_chunk["language"],
+                    "start_char": chunk.start_char,
+                    "end_char": chunk.end_char,
                     **({"score": hit_scores[item_id]} if item_id in hit_scores else {}),
                 }
-                for rank, item_id in enumerate(ranked_ids, start=1)
-            ]
+                window_chunks = getattr(hit, "window_chunks", None)
+                if window_chunks is not None:
+                    row["window_chunk_ids"] = [window.chunk_id for window in window_chunks]
+                    row["window_provenance"] = [
+                        {
+                            "chunk_id": window.chunk_id,
+                            "document_id": window.document_id,
+                            "document_version_id": window.version_id,
+                            "source_ref": doc_by_id[window.document_id].get(
+                                "source_ref", doc_by_id[window.document_id].get("source", window.source)
+                            ),
+                            "document_sha256": hashlib.sha256(
+                                doc_by_id[window.document_id]["text"].encode("utf-8")
+                            ).hexdigest(),
+                            "chunk_sha256": hashlib.sha256(window.text.encode("utf-8")).hexdigest(),
+                            "start_char": window.start_char,
+                            "end_char": window.end_char,
+                        }
+                        for window in window_chunks
+                    ]
+                provenance.append(row)
             if question["answerable"]:
                 metric = retrieval_metrics(ranked_ids, question["relevance"], k=k)
                 metric_rows.append((question, metric))
@@ -722,6 +773,7 @@ def write_report(
 
     if not overwrite:
         try:
+            _validated_output_path(path, output_root)
             open_target = name if parent_fd is not None else destination
             fd = os.open(
                 open_target,
@@ -778,8 +830,9 @@ def write_report(
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        if destination.is_symlink():
-            raise ValueError("report destination must not be a symlink")
+        if _is_reparse_path(destination):
+            raise ValueError("report destination must not be a symlink or reparse point")
+        _validated_output_path(path, output_root)
         os.replace(temporary, destination)
     finally:
         try:
