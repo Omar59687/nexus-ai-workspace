@@ -19,6 +19,7 @@ from nexus_ai.documents.types import (
     ExtractedPage,
     IndexedDocument,
     IngestionResult,
+    SourceChunk,
 )
 from nexus_ai.retrieval.schemas import RetrievalResponse
 
@@ -96,7 +97,14 @@ def indexed_document(workspace="workspace-a", document_id="doc-1"):
         extractor_name="fake", extractor_version="1", chunker_version="c1",
         pages=(ExtractedPage(1, "source"),), warnings=(), offsets_reliable=True,
     )
-    return IndexedDocument(document, (), (), "fake/model", "revision", 2,
+    chunk = SourceChunk(
+        chunk_id="chunk-1", document_id=document_id, version_id="v1",
+        source_path="report.pdf", source_sha256="a" * 64,
+        extractor_name="fake", extractor_version="1", page_number=1,
+        start_char=0, end_char=6, start_line=1, end_line=1, text="source",
+        heading_path=(), offsets_reliable=True, chunker_version="c1",
+    )
+    return IndexedDocument(document, (chunk,), (), "fake/model", "revision", 2,
                            "generation-1", 500, 100, "preprocessing-1")
 
 
@@ -222,10 +230,10 @@ class BackendAdapterTests(unittest.TestCase):
     def test_answer_adapter_passes_only_retrieved_citations(self):
         citation = {
             "workspace_id": "workspace-a", "document_id": "doc-1", "document_version_id": "v1",
-            "source_path": "report.txt", "source_sha256": "a" * 64, "page_number": None,
+            "source_path": "report.pdf", "source_sha256": "a" * 64, "page_number": 1,
             "chunk_id": "chunk-1", "start_char": 0, "end_char": 6,
-            "matched_window_id": "window-1", "matched_window_start_char": 0,
-            "matched_window_end_char": 6, "offsets_reliable": True, "exact_text": "source",
+            "matched_window_id": None, "matched_window_start_char": None,
+            "matched_window_end_char": None, "offsets_reliable": True, "exact_text": "source",
         }
         from nexus_ai.retrieval.schemas import EvidenceCitation, RetrievedEvidence
         found = RetrievalResponse(
@@ -234,6 +242,7 @@ class BackendAdapterTests(unittest.TestCase):
                                        strategy="windowed_e5", citation=EvidenceCitation(**citation))],
         )
         self.retrieval.response = found
+        self.repo.rows["workspace-a"] = [indexed_document()]
         answerer = FakeAnswerer()
         self.adapter.answerer = answerer
         result = self.adapter.grounded_answer(
@@ -242,6 +251,36 @@ class BackendAdapterTests(unittest.TestCase):
         self.assertEqual(result.answer, "supported")
         self.assertEqual(answerer.calls[0][1], (found.results[0].citation,))
         self.assertEqual(answerer.calls[0][2], "en")
+
+    def test_grounded_answer_rejects_source_replaced_during_generation(self):
+        from nexus_ai.documents.api_contracts import StaleEvidenceError
+        from nexus_ai.retrieval.schemas import EvidenceCitation, RetrievedEvidence
+
+        self.repo.rows["workspace-a"] = [indexed_document()]
+        citation = EvidenceCitation(
+            workspace_id="workspace-a", document_id="doc-1", document_version_id="v1",
+            source_path="report.pdf", source_sha256="a" * 64, page_number=1,
+            chunk_id="chunk-1", start_char=0, end_char=6,
+            matched_window_id=None, matched_window_start_char=None,
+            matched_window_end_char=None, offsets_reliable=True, exact_text="source",
+        )
+        self.retrieval.response = RetrievalResponse(
+            workspace_id="workspace-a", strategy="windowed_e5", status="ok",
+            results=[RetrievedEvidence(score=0.9, score_type="cosine_similarity",
+                                       strategy="windowed_e5", citation=citation)],
+        )
+
+        class DeletingAnswerer(FakeAnswerer):
+            def answer(inner_self, query, evidence, *, language):
+                response = super(DeletingAnswerer, inner_self).answer(query, evidence, language=language)
+                self.repo.delete("workspace-a", "doc-1")
+                return response
+
+        self.adapter.answerer = DeletingAnswerer()
+        with self.assertRaises(StaleEvidenceError):
+            self.adapter.grounded_answer(
+                context(), GroundedAnswerRequest(query="question", language="en"),
+            )
 
 
 if __name__ == "__main__":

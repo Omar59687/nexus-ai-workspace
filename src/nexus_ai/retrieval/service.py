@@ -185,7 +185,24 @@ class RetrievalService:
                 query_vector = validate_vector(query_vectors[0], dimensions=dimensions)
             elif indexed.embedding_dimensions != dimensions:
                 raise IndexGenerationMismatchError("active index generations use inconsistent dimensions")
-            windows = indexed.windows
+            if filters.page_number is None:
+                chunks = indexed.chunks
+                windows = indexed.windows
+            else:
+                # Repository filters select documents containing the page, but
+                # may return the document's full index snapshot. Restrict both
+                # the vector candidates and citation map here so evidence lookup
+                # cannot leak a matching chunk from a sibling page.
+                chunks = tuple(
+                    chunk for chunk in indexed.chunks
+                    if chunk.page_number == filters.page_number
+                )
+                allowed_chunk_ids = {chunk.chunk_id for chunk in chunks}
+                windows = tuple(
+                    window for window in indexed.windows
+                    if window.page_number == filters.page_number
+                    and window.chunk_id in allowed_chunk_ids
+                )
             if len(windows) > self.config.max_windows:
                 raise ValueError("document index exceeds max_windows")
             scanned_windows += len(windows)
@@ -198,7 +215,7 @@ class RetrievalService:
                 query_vector, vector_map, top_k=len(windows), max_vectors=self.config.max_windows,
             )
             window_by_id = {window.window_id: window for window in windows}
-            chunk_by_id = {chunk.chunk_id: chunk for chunk in indexed.chunks}
+            chunk_by_id = {chunk.chunk_id: chunk for chunk in chunks}
             doc_best: dict[str, tuple[float, object]] = {}
             for item in ranked:
                 window = window_by_id[item.item_id]

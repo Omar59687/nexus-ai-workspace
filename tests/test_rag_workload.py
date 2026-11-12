@@ -116,6 +116,23 @@ class SyntheticWorkloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot exceed"):
             apply_synthetic_updates(fixture, update_count=5)
 
+    def test_combined_judgment_budget_rejects_memory_exhausting_configurations(self):
+        with self.assertRaisesRegex(ValueError, "max_judgment_cells"):
+            build_workload_fixture(document_count=150, chunks_per_document=20,
+                                   question_count=1_000)
+
+        class NoDeepcopyList(list):
+            def __deepcopy__(self, memo):
+                raise AssertionError("oversized input must be rejected before copying")
+
+        oversized = {
+            "documents": [],
+            "chunks": NoDeepcopyList([None] * 1_001),
+            "queries": NoDeepcopyList([None] * 500),
+        }
+        with self.assertRaisesRegex(ValueError, "max_judgment_cells"):
+            apply_synthetic_updates(oversized, update_count=0)
+
 
 if __name__ == "__main__":
     unittest.main()

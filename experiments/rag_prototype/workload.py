@@ -31,6 +31,7 @@ MAX_DOCUMENTS = 150
 MAX_CHUNKS_PER_DOCUMENT = 20
 MAX_QUESTIONS = 1_000
 MAX_UPDATES = MAX_DOCUMENTS
+MAX_JUDGMENT_CELLS = 500_000
 _DIRECTION_ROWS = ("ar", "ar"), ("en", "en"), ("ar", "en"), ("en", "ar")
 
 
@@ -54,6 +55,7 @@ def build_workload_fixture(
     _bounded_int(seed, "seed", minimum=0, maximum=2**31 - 1)
     if type(document_count) is not int:
         raise ValueError("document_count must be an integer")
+    _check_judgment_budget(question_count, document_count * chunks_per_document)
 
     documents: list[dict[str, Any]] = []
     chunks: list[dict[str, Any]] = []
@@ -179,14 +181,19 @@ def apply_synthetic_updates(fixture: Mapping[str, Any], *, update_count: int) ->
     and full-index rebuild workloads, not a durable repository transaction.
     """
     _bounded_int(update_count, "update_count", minimum=0, maximum=MAX_UPDATES)
-    updated = copy.deepcopy(dict(fixture))
-    documents = updated.get("documents")
-    chunks = updated.get("chunks")
-    queries = updated.get("queries")
+    original = dict(fixture)
+    documents = original.get("documents")
+    chunks = original.get("chunks")
+    queries = original.get("queries")
     if not isinstance(documents, list) or not isinstance(chunks, list) or not isinstance(queries, list):
         raise ValueError("fixture must contain documents, chunks, and queries lists")
+    _check_judgment_budget(len(queries), len(chunks))
     if update_count > len(documents):
         raise ValueError("update_count cannot exceed the document count")
+    updated = copy.deepcopy(original)
+    documents = updated["documents"]
+    chunks = updated["chunks"]
+    queries = updated["queries"]
     if update_count == 0:
         return updated
 
@@ -415,6 +422,13 @@ def _index_metrics(seconds: float, document_count: int, chunk_count: int) -> dic
         "documents_per_second": document_count / seconds if seconds > 0 else 0.0,
         "chunks_per_second": chunk_count / seconds if seconds > 0 else 0.0,
     }
+
+
+def _check_judgment_budget(question_count: int, chunk_count: int) -> None:
+    if question_count * chunk_count > MAX_JUDGMENT_CELLS:
+        raise ValueError(
+            "synthetic workload exceeds max_judgment_cells; reduce questions, documents, or chunks per document"
+        )
 
 
 def _synthetic_fact(language: str, item_key: str, amount: int, *, revision: int) -> str:

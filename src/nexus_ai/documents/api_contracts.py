@@ -17,7 +17,7 @@ from nexus_ai.documents.service import DocumentIngestionService
 from nexus_ai.documents.types import DocumentVersion, RetrievalFilters
 from nexus_ai.retrieval.repository import DocumentIndexRepository
 from nexus_ai.retrieval.schemas import EvidenceCitation, RetrievalResponse
-from nexus_ai.retrieval.service import RetrievalService
+from nexus_ai.retrieval.service import CitationValidationError, RetrievalService, validate_citation
 
 
 class WorkspacePermissionError(PermissionError):
@@ -26,6 +26,10 @@ class WorkspacePermissionError(PermissionError):
 
 class AnsweringUnavailableError(RuntimeError):
     """No grounded answer service has been configured for this backend."""
+
+
+class StaleEvidenceError(RuntimeError):
+    """Retrieved evidence changed or disappeared before answer delivery."""
 
 
 @dataclass(frozen=True)
@@ -337,7 +341,21 @@ class DocumentBackendAdapter:
             request.query, workspace_id=context.workspace_id, top_k=request.top_k,
         )
         citations = tuple(row.citation for row in found.results)
-        return self.answerer.answer(request.query, citations, language=request.language)
+        answer = self.answerer.answer(request.query, citations, language=request.language)
+        for citation in answer.citations:
+            if citation not in citations or citation.workspace_id != context.workspace_id:
+                raise StaleEvidenceError("answer citations were not part of the authorized retrieval snapshot")
+            active = self.repository.get_active(context.workspace_id, citation.document_id)
+            if active is None or active.document.version_id != citation.document_version_id:
+                raise StaleEvidenceError("source evidence changed before answer delivery")
+            chunk = next((row for row in active.chunks if row.chunk_id == citation.chunk_id), None)
+            if chunk is None:
+                raise StaleEvidenceError("source evidence changed before answer delivery")
+            try:
+                validate_citation(citation, active.document.pages, chunk, windows=active.windows)
+            except CitationValidationError as exc:
+                raise StaleEvidenceError("source evidence changed before answer delivery") from exc
+        return answer
 
 
 def _summary(document: DocumentVersion, chunk_count: int) -> DocumentSummary:

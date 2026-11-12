@@ -1,8 +1,10 @@
 """Timed, bounded, POSIX-resource-limited PDF extraction worker.
 
 The parent runner refuses platforms where this implementation cannot enforce
-address-space and CPU limits. Windows callers must use a separately reviewed
-Job Object implementation before processing untrusted PDFs.
+address-space and CPU limits. Windows remains fail-closed until a separately
+tested runner can constrain memory, terminate the complete child job on timeout,
+and bound pipe I/O. A Windows Job Object does not restrict filesystem or network
+access; this worker is bounded local processing, not a sandbox for hostile PDFs.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import json
 import math
 import os
 import selectors
+import signal
 import subprocess
 import sys
 import time
@@ -153,7 +156,8 @@ class IsolatedPdfExtractor:
 def _require_platform_limits() -> None:
     if os.name != "posix":
         raise PdfIsolationUnavailableError(
-            "isolated PDF ingestion is disabled: enforceable Windows Job Object limits are not configured"
+            "PDF ingestion is disabled on Windows until a tested resource-limited worker is configured; "
+            "Job Objects alone do not sandbox filesystem or network access"
         )
     try:
         import resource
@@ -179,6 +183,9 @@ def _run_bounded_process(
         stderr=subprocess.DEVNULL,
         close_fds=True,
         bufsize=0,
+        # A separate session gives timeout/error cleanup an unambiguous process
+        # group to kill, including descendants that inherit stdout/stderr.
+        start_new_session=True,
     )
     assert process.stdin is not None and process.stdout is not None
     selector = selectors.DefaultSelector()
@@ -225,19 +232,36 @@ def _run_bounded_process(
             exit_code = process.wait(timeout=max(0.0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired as exc:
             raise PdfWorkerTimeoutError("PDF parser exceeded its wall-clock limit") from exc
+        # Do not leave helper processes behind even if the worker exited
+        # cleanly after closing its inherited pipe handles.
+        _kill_worker_process_group(process)
         if exit_code != 0 and not output:
             raise PdfWorkerExtractionError("corrupt")
         return bytes(output)
     except BaseException:
-        if process.poll() is None:
-            process.kill()
-        process.wait()
+        _kill_worker_process_group(process)
         raise
     finally:
         selector.close()
         for stream in (process.stdin, process.stdout):
             if stream is not None and not stream.closed:
                 stream.close()
+
+
+def _kill_worker_process_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill and reap the worker plus descendants in its dedicated POSIX group."""
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            # Retain direct-child cleanup if group signaling is unavailable.
+            if process.poll() is None:
+                process.kill()
+    elif process.poll() is None:
+        process.kill()
+    process.wait()
 
 
 def _apply_worker_limits(memory_limit_bytes: int, cpu_limit_seconds: int) -> None:

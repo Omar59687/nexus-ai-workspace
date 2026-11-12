@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from nexus_ai.documents.chunking import ChunkingConfig, SourceAwareChunker
 from nexus_ai.documents.service import DocumentIngestionLimits, DocumentIngestionService
-from nexus_ai.documents.types import RetrievalFilters
+from nexus_ai.documents.types import ExtractedPage, ExtractionResult, RetrievalFilters
 from nexus_ai.retrieval.embeddings import EmbeddingUnavailableError
 from nexus_ai.retrieval.repository import InMemoryDocumentIndex, RepositoryLimits
 from nexus_ai.retrieval.schemas import RetrievalRequest
@@ -117,6 +117,53 @@ class RetrievalServiceTests(unittest.TestCase):
         by_page = self.retriever.retrieve("needle", workspace_id="workspace-a",
                                           filters=RetrievalFilters(page_number=2))
         self.assertEqual(by_page.status, "empty")
+
+    def test_page_filter_never_returns_evidence_from_a_sibling_page(self):
+        class TwoPageExtractor:
+            name = "two-page-fixture"
+            version = "1"
+
+            def extract(self, content, *, source_path):
+                return ExtractionResult(
+                    self.name, self.version, "text/plain",
+                    (
+                        ExtractedPage(1, "first page contains unrelated material."),
+                        ExtractedPage(2, "second page contains needle evidence."),
+                    ),
+                )
+
+        source = self.root / "two-pages.txt"
+        source.write_bytes(b"deterministic parser input")
+        ingestion = DocumentIngestionService(
+            approved_root=self.root, repository=self.repository, embedder=self.embedder,
+            chunker=self.ingestion.chunker, extractors={".txt": TwoPageExtractor()},
+            limits=self.ingestion.limits,
+        )
+        indexed = ingestion.ingest("workspace-a", "two-pages.txt")
+
+        for strategy in ("windowed_e5", "bm25_raw"):
+            with self.subTest(strategy=strategy):
+                unfiltered = self.retriever.retrieve(
+                    "needle", workspace_id="workspace-a", strategy=strategy,
+                    filters=RetrievalFilters(document_id=indexed.document_id),
+                )
+                self.assertEqual(unfiltered.status, "ok")
+                self.assertEqual(unfiltered.results[0].citation.page_number, 2)
+
+                page_one = self.retriever.retrieve(
+                    "needle", workspace_id="workspace-a", strategy=strategy,
+                    filters=RetrievalFilters(document_id=indexed.document_id, page_number=1),
+                )
+                self.assertTrue(all(row.citation.page_number == 1 for row in page_one.results))
+                if strategy == "bm25_raw":
+                    self.assertEqual(page_one.status, "empty")
+
+                page_two = self.retriever.retrieve(
+                    "needle", workspace_id="workspace-a", strategy=strategy,
+                    filters=RetrievalFilters(document_id=indexed.document_id, page_number=2),
+                )
+                self.assertTrue(page_two.results)
+                self.assertTrue(all(row.citation.page_number == 2 for row in page_two.results))
 
     def test_top_k_and_strategy_are_bounded_and_validated(self):
         self._write_and_ingest("facts.txt", "needle evidence")

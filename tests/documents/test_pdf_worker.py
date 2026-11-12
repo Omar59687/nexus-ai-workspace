@@ -1,5 +1,7 @@
 import os
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from nexus_ai.documents.pdf_worker import (
     PdfWorkerExtractionError,
     PdfWorkerOutputLimitError,
     PdfWorkerTimeoutError,
+    _run_bounded_process,
 )
 
 
@@ -50,6 +53,35 @@ class IsolatedPdfWorkerTests(unittest.TestCase):
         with self.assertRaises(PdfWorkerTimeoutError):
             IsolatedPdfExtractor(worker_script=worker, timeout_seconds=0.1).extract(b"pdf", source_path="slow.pdf")
 
+    def test_timeout_kills_descendant_holding_inherited_output_pipe(self):
+        marker = self.root / "descendant_survived.txt"
+        descendant_code = (
+            "import pathlib,time; time.sleep(0.55); "
+            f"pathlib.Path({str(marker)!r}).write_text('survived')"
+        )
+        worker = _script(
+            self.root,
+            "spawn_descendant.py",
+            "import subprocess,sys,time\n"
+            f"subprocess.Popen([sys.executable, '-c', {descendant_code!r}])\n"
+            "time.sleep(20)\n",
+        )
+        started = time.monotonic()
+        with self.assertRaises(PdfWorkerTimeoutError):
+            _run_bounded_process(
+                [sys.executable, str(worker)], b"pdf",
+                timeout_seconds=0.15, max_output_bytes=1_000,
+            )
+        self.assertLess(time.monotonic() - started, 1.5)
+
+        # If the grandchild survived, it would write this marker after the
+        # worker times out. It inherited stdout, so killing only the direct
+        # child would leave that pipe holder running.
+        deadline = time.monotonic() + 0.8
+        while time.monotonic() < deadline:
+            self.assertFalse(marker.exists(), "descendant survived worker timeout")
+            time.sleep(0.01)
+
     def test_stdout_is_capped_even_for_a_misbehaving_worker(self):
         worker = _script(self.root, "fake_flood.py", "import sys\nsys.stdin.buffer.read()\nsys.stdout.write('x'*100000)\nsys.stdout.flush()\n")
         extractor = IsolatedPdfExtractor(
@@ -85,9 +117,13 @@ class PdfWorkerConfigurationTests(unittest.TestCase):
     def test_windows_platform_fails_closed_without_job_object_support(self):
         from unittest.mock import patch
         extractor = IsolatedPdfExtractor()
-        with patch("nexus_ai.documents.pdf_worker.os.name", "nt"):
+        with patch("nexus_ai.documents.pdf_worker.os.name", "nt"), \
+             patch("nexus_ai.documents.pdf_worker.subprocess.Popen") as popen:
             with self.assertRaises(PdfIsolationUnavailableError):
                 extractor.extract(b"pdf", source_path="report.pdf")
+        # The platform gate runs before any process is created, so an
+        # unsupported Windows configuration cannot leave a parser behind.
+        popen.assert_not_called()
 
 
 if __name__ == "__main__":
