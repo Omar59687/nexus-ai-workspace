@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
@@ -25,6 +27,88 @@ MAX_ANSWER_QUERY_CHARS = 8_000
 MAX_ANSWER_CONTEXT_CHARS = 50_000
 MAX_ANSWER_EVIDENCE = 20
 _ARABIC = re.compile(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]")
+_NUMERIC_TEXT_TRANSLATION = str.maketrans(
+    "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫−",
+    "01234567890123456789,.-",
+)
+_NUMBER_PATTERN = re.compile(
+    r"(?<![\w])[+-]?\d+(?:,\d+)*(?:\.\d+)?(?![\w])"
+)
+_MAGNITUDES = (
+    (re.compile(r"^(?:trillion|trillions)(?!\w)", re.IGNORECASE), 12),
+    (re.compile(r"^(?:billion|billions)(?!\w)", re.IGNORECASE), 9),
+    (re.compile(r"^(?:million|millions)(?!\w)", re.IGNORECASE), 6),
+    (re.compile(r"^(?:thousand|thousands)(?!\w)", re.IGNORECASE), 3),
+    (re.compile(r"^(?:تريليون|ترليون)(?![\w])"), 12),
+    (re.compile(r"^(?:مليار|مليارات)(?![\w])"), 9),
+    (re.compile(r"^(?:مليون|ملايين)(?![\w])"), 6),
+    (re.compile(r"^(?:ألف|آلاف|الف)(?![\w])"), 3),
+)
+_CURRENCY_PREFIXES = (
+    (re.compile(r"(?:\bUSD|\bUS\s+dollars?|\bdollars?|\$)\s*$", re.IGNORECASE), "USD"),
+    (re.compile(r"(?:\bEUR|\beuros?|€)\s*$", re.IGNORECASE), "EUR"),
+    (re.compile(r"(?:\bGBP|\bpounds?\s+sterling|\bpounds?|£)\s*$", re.IGNORECASE), "GBP"),
+    (re.compile(r"(?:\bSAR|\bSaudi\s+riyals?|\briyals?|ريال(?:\s+سعودي)?|ريالات)\s*$", re.IGNORECASE), "SAR"),
+    (re.compile(r"(?:\bAED|\bUAE\s+dirhams?|\bdirhams?)\s*$", re.IGNORECASE), "AED"),
+    (re.compile(r"(?:\bJOD|\bJordanian\s+dinars?|دينار\s+أردني|دنانير\s+أردنية)\s*$", re.IGNORECASE), "JOD"),
+    (re.compile(r"(?:\bCAD|\bCanadian\s+dollars?|C\$)\s*$", re.IGNORECASE), "CAD"),
+    (re.compile(r"(?:\bAUD|\bAustralian\s+dollars?|A\$)\s*$", re.IGNORECASE), "AUD"),
+    (re.compile(r"(?:\bJPY|\byen)\s*$", re.IGNORECASE), "JPY"),
+    (re.compile(r"(?:\bCNY|\byuan)\s*$", re.IGNORECASE), "CNY"),
+    (re.compile(r"¥\s*$"), "CNY_OR_JPY"),
+    (re.compile(r"(?:\bINR|\brupees?|₹)\s*$", re.IGNORECASE), "INR"),
+    (re.compile(r"(?:دولار(?:\s+أمريكي)?|دولارات)\s*$"), "USD"),
+)
+_CURRENCY_SUFFIXES = (
+    (re.compile(r"^(?:USD|US\s+dollars?|dollars?)(?!\w)", re.IGNORECASE), "USD"),
+    (re.compile(r"^(?:EUR|euros?)(?!\w)|^€"), "EUR"),
+    (re.compile(r"^(?:GBP|pounds?\s+sterling|pounds?)(?!\w)|^£", re.IGNORECASE), "GBP"),
+    (re.compile(r"^(?:SAR|Saudi\s+riyals?|riyals?)(?!\w)|^ريال(?:\s+سعودي)?|^ريالات", re.IGNORECASE), "SAR"),
+    (re.compile(r"^(?:AED|UAE\s+dirhams?|dirhams?)(?!\w)", re.IGNORECASE), "AED"),
+    (re.compile(r"^(?:JOD|Jordanian\s+dinars?)(?!\w)|^دينار\s+أردني|^دنانير\s+أردنية", re.IGNORECASE), "JOD"),
+    (re.compile(r"^(?:CAD|Canadian\s+dollars?|C\$)(?!\w)", re.IGNORECASE), "CAD"),
+    (re.compile(r"^(?:AUD|Australian\s+dollars?|A\$)(?!\w)", re.IGNORECASE), "AUD"),
+    (re.compile(r"^(?:JPY|yen)(?!\w)", re.IGNORECASE), "JPY"),
+    (re.compile(r"^(?:CNY|yuan)(?!\w)", re.IGNORECASE), "CNY"),
+    (re.compile(r"^¥"), "CNY_OR_JPY"),
+    (re.compile(r"^(?:INR|rupees?)(?!\w)|^₹", re.IGNORECASE), "INR"),
+    (re.compile(r"^دولار(?:\s+أمريكي)?|^دولارات"), "USD"),
+)
+_UNIT_SUFFIXES = (
+    (re.compile(r"^(?:kilograms?|kg)(?!\w)", re.IGNORECASE), "kg"),
+    (re.compile(r"^(?:grams?|g)(?!\w)", re.IGNORECASE), "g"),
+    (re.compile(r"^(?:kilometers?|km)(?!\w)", re.IGNORECASE), "km"),
+    (re.compile(r"^(?:meters?|metres?)(?!\w)", re.IGNORECASE), "m"),
+    (re.compile(r"^(?:liters?|litres?|l)(?!\w)", re.IGNORECASE), "l"),
+    (re.compile(r"^(?:shares?)(?!\w)", re.IGNORECASE), "share"),
+    (re.compile(r"^(?:basis\s+points?|bps)(?!\w)", re.IGNORECASE), "bps"),
+    (re.compile(r"^(?:units?)(?!\w)", re.IGNORECASE), "unit"),
+)
+_PERCENT_SUFFIX = re.compile(
+    r"^(?:%|٪|percent(?:age)?(?!\w)|بالمئة|بالْمئة|في\s+المئة|نسبة\s+مئوية)(?![\w])",
+    re.IGNORECASE,
+)
+_ISO_CURRENCY_CODE = re.compile(r"(?<!\w)([A-Z]{3})\s*$", re.ASCII)
+_ISO_CURRENCY_CODE_PREFIX = re.compile(r"^([A-Z]{3})(?!\w)", re.ASCII)
+_ISO_CURRENCY_CODES = frozenset({
+    "AED", "AFN", "ARS", "AUD", "BDT", "BHD", "BRL", "CAD", "CHF", "CLP",
+    "CNY", "COP", "CZK", "DKK", "DZD", "EGP", "EUR", "GBP", "GHS", "HKD",
+    "HUF", "IDR", "ILS", "INR", "IQD", "IRR", "ISK", "JOD", "JPY", "KES",
+    "KRW", "KWD", "LBP", "LKR", "MAD", "MXN", "MYR", "NGN", "NOK", "NPR",
+    "NZD", "OMR", "PEN", "PHP", "PKR", "PLN", "QAR", "RON", "RUB", "SAR",
+    "SEK", "SGD", "THB", "TRY", "TWD", "UAH", "USD", "UYU", "VND", "ZAR",
+})
+_IDENTIFIER_PREFIX = re.compile(
+    r"(?:\b(?:document(?:\s+id)?|doc(?:\s+id)?|id|identifier|report\s+(?:no\.?|number)|page\s+no\.?)|رقم|معرف)\s*[#:_-]?\s*$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class _NumericClaim:
+    value: Decimal
+    dimension: tuple[str, str] | None
+    invalid: bool = False
 
 
 class AnswerModelOutput(BaseModel):
@@ -174,12 +258,16 @@ class GroundedAnswerService:
             raise AnswerOutputRejectedError("fabricated_citation_id")
 
         selected_citations = tuple(evidence_by_id[identifier] for identifier in output.citation_ids)
-        supported_numbers = {
-            number
+        supported_numbers = tuple(
+            claim
             for citation in selected_citations
-            for number in _number_tokens(citation.exact_text)
-        }
-        if any(number not in supported_numbers for number in _number_tokens(output.answer)):
+            for claim in _numeric_claims(citation.exact_text)
+        )
+        answer_numbers = _numeric_claims(output.answer)
+        if any(
+            not any(_claim_supported(source, answer) for source in supported_numbers)
+            for answer in answer_numbers
+        ):
             raise AnswerOutputRejectedError("unsupported_numeric_claim")
         return GroundedAnswerResult(
             answer=output.answer.strip(),
@@ -222,30 +310,134 @@ def _build_prompt(query: str, evidence: list[dict[str, object]]) -> str:
     )
 
 
-def _number_tokens(text: str) -> set[str]:
-    """Return conservatively normalized numeric tokens for simple support checks.
+def _numeric_claims(text: str) -> tuple[_NumericClaim, ...]:
+    """Parse individual numeric mentions and only their adjacent units/scales.
 
-    This catches obvious generated numbers absent from the cited passages. It
-    is not a substitute for semantic or domain-specific numeric validation.
+    Magnitudes apply to the number immediately before the scale word. This
+    deliberately never composes separate evidence values (for example,
+    ``20 million`` plus ``22 million`` cannot support ``42 million``).
     """
-    digit_map = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
-    normalized = (text.translate(digit_map).replace("٬", ",").replace("٫", ".")
-                  .replace("−", "-"))
-    tokens = set()
-    for match in re.finditer(r"(?<!\w)[+-]?\d+(?:[,.]\d+)*(?:%)?(?!\w)", normalized):
-        token = match.group(0)
-        percent = token.endswith("%")
-        numeric = token[:-1] if percent else token
-        numeric = numeric.replace(",", "")
-        sign = ""
-        if numeric[:1] in ("+", "-"):
-            sign, numeric = numeric[:1], numeric[1:]
-        whole, separator, fraction = numeric.partition(".")
-        whole = whole.lstrip("0") or "0"
-        fraction = fraction.rstrip("0")
-        canonical = sign + whole + ("." + fraction if separator and fraction else "")
-        tokens.add(canonical + ("%" if percent else ""))
-    return tokens
+    normalized = text.translate(_NUMERIC_TEXT_TRANSLATION)
+    claims = []
+    for match in _NUMBER_PATTERN.finditer(normalized):
+        raw = match.group(0)
+        value = _parse_decimal(raw)
+        if value is None:
+            claims.append(_NumericClaim(value=Decimal(0), dimension=None, invalid=True))
+            continue
+
+        prefix = normalized[max(0, match.start() - 48):match.start()]
+        remainder = normalized[match.end():]
+        prefix_currency = _currency_prefix(prefix)
+        # A magnitude immediately after a document/report ID is treated as
+        # identifier text, never as a quantity scale.
+        is_identifier = bool(_IDENTIFIER_PREFIX.search(prefix))
+        if not is_identifier:
+            for pattern, scale_power in _MAGNITUDES:
+                magnitude_match = pattern.match(remainder.lstrip())
+                if magnitude_match:
+                    value = _scale_decimal(value, scale_power)
+                    leading = len(remainder) - len(remainder.lstrip())
+                    remainder = remainder[leading + magnitude_match.end():]
+                    break
+
+        suffix = remainder.lstrip()
+        percent_match = _PERCENT_SUFFIX.match(suffix)
+        suffix_currency = _currency_suffix(suffix)
+        suffix_unit = _match_prefix(_UNIT_SUFFIXES, suffix)
+        percent = raw.endswith("%") or raw.endswith("٪") or percent_match is not None
+        if percent_match:
+            after_percent = suffix[percent_match.end():].lstrip()
+            if (_currency_suffix(after_percent) is not None
+                    or _match_prefix(_UNIT_SUFFIXES, after_percent) is not None):
+                suffix_unit = "conflicting-unit"
+
+        dimensions: list[tuple[str, str]] = []
+        if prefix_currency:
+            dimensions.append(("currency", prefix_currency))
+        if suffix_currency:
+            dimensions.append(("currency", suffix_currency))
+        if suffix_unit:
+            dimensions.append(("unit", suffix_unit))
+        if percent:
+            dimensions.append(("percent", "percent"))
+
+        # Conflicting or stacked dimensions are not considered support.
+        distinct_dimensions = set(dimensions)
+        invalid = len(distinct_dimensions) > 1 or suffix_unit == "conflicting-unit"
+        dimension = dimensions[0] if len(distinct_dimensions) == 1 else None
+        claims.append(_NumericClaim(value=value, dimension=dimension, invalid=invalid))
+    return tuple(claims)
+
+
+def _parse_decimal(raw: str) -> Decimal | None:
+    """Parse unambiguous decimal/grouped forms; reject ambiguous separators."""
+    if len(raw) > 128:
+        return None
+    value = raw.replace("−", "-")
+    sign = ""
+    if value[:1] in ("+", "-"):
+        sign, value = value[:1], value[1:]
+    if "," in value:
+        if not re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", value):
+            return None
+        value = value.replace(",", "")
+    try:
+        return Decimal(sign + value)
+    except InvalidOperation:
+        return None
+
+
+def _scale_decimal(value: Decimal, power: int) -> Decimal:
+    sign, digits, exponent = value.as_tuple()
+    return Decimal((sign, digits, exponent + power))
+
+
+def _match_suffix(patterns, text: str) -> str | None:
+    for pattern, value in patterns:
+        if pattern.search(text):
+            return value
+    return None
+
+
+def _match_prefix(patterns, text: str) -> str | None:
+    for pattern, value in patterns:
+        if pattern.match(text):
+            return value
+    return None
+
+
+def _currency_prefix(text: str) -> str | None:
+    known = _match_suffix(_CURRENCY_PREFIXES, text)
+    if known:
+        return known
+    match = _ISO_CURRENCY_CODE.search(text)
+    if not match:
+        return None
+    code = match.group(1)
+    return code if code in _ISO_CURRENCY_CODES else "UNSUPPORTED_CODE:" + code
+
+
+def _currency_suffix(text: str) -> str | None:
+    known = _match_prefix(_CURRENCY_SUFFIXES, text)
+    if known:
+        return known
+    match = _ISO_CURRENCY_CODE_PREFIX.match(text)
+    if not match:
+        return None
+    code = match.group(1)
+    return code if code in _ISO_CURRENCY_CODES else "UNSUPPORTED_CODE:" + code
+
+
+def _claim_supported(source: _NumericClaim, answer: _NumericClaim) -> bool:
+    if source.invalid or answer.invalid or source.value != answer.value:
+        return False
+    if source.dimension == answer.dimension:
+        return True
+    # A numeric-only rendering of an explicitly sourced currency amount is
+    # accepted (e.g. "42 million dollars" -> "42,000,000"). Adding or changing
+    # a currency, percent marker, or physical unit is not.
+    return source.dimension is not None and source.dimension[0] == "currency" and answer.dimension is None
 
 
 def _resolve_language(language: str, query: str) -> Literal["ar", "en"]:

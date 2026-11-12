@@ -147,6 +147,79 @@ class GroundedAnswerTests(unittest.TestCase):
         self.assertEqual(result.answer, "الإيرادات ٤٢.")
         self.assertEqual(result.language, "ar")
 
+    def test_explicit_english_and_arabic_magnitudes_match_grouped_values(self):
+        cases = (
+            ("Northstar revenue was 42 million dollars for 2024.", "42,000,000"),
+            ("The supported value is 42 billion.", "42,000,000,000"),
+            ("The supported value is 1.5 million.", "1,500,000"),
+            ("The supported value is 42,000,000.", "42 million"),
+            ("The supported value is 42,000,000,000.", "42 billion"),
+            ("The supported value is 1,500,000.", "1.5 million"),
+            ("Revenue was 42 million USD.", "42,000,000 USD"),
+            ("The net loss is -1.5 million dollars.", "-1,500,000"),
+            ("The supported quantity is 42 kg.", "42 kilograms"),
+            ("The supported margin is 42 percent.", "42%"),
+            ("بلغت الإيرادات ٤٢ مليون.", "٤٢٬٠٠٠٬٠٠٠"),
+            ("بلغت الإيرادات ١٫٥ مليون.", "1,500,000"),
+            ("بلغت الإيرادات ٤٢ مليون ريال سعودي.", "42,000,000 ريال سعودي"),
+            ("بلغت النسبة ٤٢ بالمئة.", "٤٢٪"),
+        )
+        for source_text, answer_text in cases:
+            with self.subTest(source=source_text, answer=answer_text):
+                source = evidence(text=source_text)
+                adapter = FakeAdapter(AnswerModelOutput(
+                    answer=answer_text,
+                    citation_ids=[self.valid_id(source)],
+                    abstain=False,
+                ))
+                result = self.service(adapter).answer("What is the value?", (source,), language="en")
+                self.assertEqual(result.answer, answer_text)
+
+    def test_numeric_equivalence_preserves_sign_currency_percent_and_units(self):
+        cases = (
+            ("Net loss was -42 million dollars.", "42,000,000"),
+            ("Revenue was 42 million USD.", "42,000,000 EUR"),
+            ("Revenue was 42 million USD.", "42,000,000 CAD"),
+            ("Revenue was 42 million USD.", "42,000,000 XYZ"),
+            ("The price is 42 CNY.", "42 JPY"),
+            ("Revenue was 42 million dollars.", "42,000,000 euros"),
+            ("The rate was 42 percent.", "42"),
+            ("The rate was 42 percent.", "42% kg"),
+            ("The quantity was 42 kg.", "42 km"),
+            ("The quantity was 42 kg.", "42"),
+            ("بلغت الإيرادات ٤٢ مليون ريال سعودي.", "42,000,000 دولار أمريكي"),
+        )
+        for source_text, answer_text in cases:
+            with self.subTest(source=source_text, answer=answer_text):
+                source = evidence(text=source_text)
+                adapter = FakeAdapter(AnswerModelOutput(
+                    answer=answer_text,
+                    citation_ids=[self.valid_id(source)],
+                    abstain=False,
+                ))
+                with self.assertRaises(AnswerOutputRejectedError) as raised:
+                    self.service(adapter).answer("What is the value?", (source,), language="en")
+                self.assertEqual(raised.exception.reason_code, "unsupported_numeric_claim")
+
+    def test_magnitude_matching_does_not_combine_values_or_reinterpret_ids_and_dates(self):
+        cases = (
+            ("The report records 20 million and 22 million.", "42,000,000"),
+            ("Document ID 42; reported revenue was 3 million.", "42 million"),
+            ("Report date 2024-05-01; amount was 3 million.", "2.024 million"),
+            ("The ambiguous value is 1,5 million.", "5,000,000"),
+        )
+        for source_text, answer_text in cases:
+            with self.subTest(source=source_text, answer=answer_text):
+                source = evidence(text=source_text)
+                adapter = FakeAdapter(AnswerModelOutput(
+                    answer=answer_text,
+                    citation_ids=[self.valid_id(source)],
+                    abstain=False,
+                ))
+                with self.assertRaises(AnswerOutputRejectedError) as raised:
+                    self.service(adapter).answer("What is the value?", (source,), language="en")
+                self.assertEqual(raised.exception.reason_code, "unsupported_numeric_claim")
+
     def test_model_abstention_differs_from_no_evidence(self):
         adapter = InspectingAdapter("", abstain=True)
         result = self.service(adapter).answer("ما الجواب؟", (evidence(),), language="ar")
