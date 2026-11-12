@@ -24,6 +24,9 @@ dev = [
     "pytest>=8.0,<9.0",
     "httpx2>=2.0,<3.0"
 ]
+documents = [
+    "pypdf>=6.0,<8.0"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
