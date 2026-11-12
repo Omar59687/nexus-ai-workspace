@@ -226,7 +226,7 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         cls._schema_created = False
         # Prefix and loopback checks are not enough: a previously used test DB
         # may still contain application data. Inspect only PostgreSQL catalog
-        # metadata before issuing any DDL, and reject any non-system table.
+        # metadata before issuing any DDL, and reject pre-existing user objects.
         with psycopg.connect(**params) as connection:
             _assert_empty_database(connection)
         with psycopg.connect(**params) as connection:
@@ -299,21 +299,49 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         original = _indexed(text="known-good original")
         repository.activate(original)
         connection_params = dict(self._base_params)
-        with self._psycopg.connect(**connection_params) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(f'SET search_path TO "{self._schema}"')
-                cursor.execute(
-                    """CREATE FUNCTION reject_window_insert() RETURNS trigger AS $$
-                       BEGIN RAISE EXCEPTION 'injected integration failure'; END;
-                       $$ LANGUAGE plpgsql"""
-                )
-                cursor.execute(
-                    "CREATE TRIGGER reject_window BEFORE INSERT ON nexus_rag_windows "
-                    "FOR EACH ROW EXECUTE FUNCTION reject_window_insert()"
-                )
-        with self.assertRaisesRegex(self._psycopg.Error, "injected integration failure"):
-            repository.activate(_indexed(text="candidate that must roll back"))
-        self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
+        try:
+            with self._psycopg.connect(**connection_params) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f'SET search_path TO "{self._schema}"')
+                    # Make this test safe to rerun within a reused integration
+                    # schema if an earlier process was interrupted mid-cleanup.
+                    cursor.execute("DROP TRIGGER IF EXISTS reject_window ON nexus_rag_windows")
+                    cursor.execute("DROP FUNCTION IF EXISTS reject_window_insert()")
+                    cursor.execute(
+                        """CREATE FUNCTION reject_window_insert() RETURNS trigger AS $$
+                           BEGIN RAISE EXCEPTION 'injected integration failure'; END;
+                           $$ LANGUAGE plpgsql"""
+                    )
+                    cursor.execute(
+                        "CREATE TRIGGER reject_window BEFORE INSERT ON nexus_rag_windows "
+                        "FOR EACH ROW EXECUTE FUNCTION reject_window_insert()"
+                    )
+            with self.assertRaisesRegex(self._psycopg.Error, "injected integration failure"):
+                repository.activate(_indexed(text="candidate that must roll back"))
+            self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
+        finally:
+            # The trigger intentionally raises, but its DDL was committed in a
+            # separate connection. Always remove both objects from the
+            # class-scoped schema so later tests see an unmodified repository.
+            with self._psycopg.connect(**connection_params) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f'SET search_path TO "{self._schema}"')
+                    cursor.execute("DROP TRIGGER IF EXISTS reject_window ON nexus_rag_windows")
+                    cursor.execute("DROP FUNCTION IF EXISTS reject_window_insert()")
+                    cursor.execute(
+                        """SELECT EXISTS (
+                               SELECT 1 FROM pg_catalog.pg_trigger t
+                               JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+                               JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                               WHERE n.nspname = %s AND t.tgname = %s AND NOT t.tgisinternal
+                           ), EXISTS (
+                               SELECT 1 FROM pg_catalog.pg_proc p
+                               JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                               WHERE n.nspname = %s AND p.proname = %s
+                           )""",
+                        (self._schema, "reject_window", self._schema, "reject_window_insert"),
+                    )
+                    self.assertEqual(cursor.fetchone(), (False, False))
 
     def test_deferred_active_pointer_foreign_key_rejects_missing_generation(self):
         params = dict(self._base_params)
