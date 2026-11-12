@@ -105,6 +105,10 @@ def extractor_for_path(
     pdf_max_pages: int = 500,
     pdf_max_page_chars: int = 2_000_000,
     pdf_max_total_chars: int = 10_000_000,
+    pdf_max_input_bytes: int = 25 * 1024 * 1024,
+    pdf_timeout_seconds: float = 300.0,
+    pdf_memory_limit_bytes: int = 1024 * 1024 * 1024,
+    pdf_cpu_limit_seconds: int = 300,
 ) -> DocumentExtractor:
     suffix = PurePosixPath(source_path).suffix.casefold()
     if suffix == ".txt":
@@ -112,6 +116,18 @@ def extractor_for_path(
     if suffix == ".md":
         return MarkdownExtractor()
     if suffix == ".pdf":
-        return PdfExtractor(max_pages=pdf_max_pages, max_page_chars=pdf_max_page_chars,
-                            max_total_chars=pdf_max_total_chars)
+        # Do not route untrusted PDFs through the in-process compatibility
+        # extractor. The isolated runner fails closed when the OS cannot enforce
+        # the requested process limits.
+        from nexus_ai.documents.pdf_worker import IsolatedPdfExtractor
+
+        return IsolatedPdfExtractor(
+            max_pages=pdf_max_pages,
+            max_page_chars=pdf_max_page_chars,
+            max_total_chars=pdf_max_total_chars,
+            max_input_bytes=pdf_max_input_bytes,
+            timeout_seconds=pdf_timeout_seconds,
+            memory_limit_bytes=pdf_memory_limit_bytes,
+            cpu_limit_seconds=pdf_cpu_limit_seconds,
+        )
     raise DocumentExtractionError("unsupported document type")

@@ -1,6 +1,7 @@
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -11,7 +12,13 @@ from nexus_ai.documents.types import RetrievalFilters
 from nexus_ai.retrieval.embeddings import EmbeddingUnavailableError
 from nexus_ai.retrieval.repository import InMemoryDocumentIndex, RepositoryLimits
 from nexus_ai.retrieval.schemas import RetrievalRequest
-from nexus_ai.retrieval.service import CitationValidationError, RetrievalConfig, RetrievalService, validate_citation
+from nexus_ai.retrieval.service import (
+    CitationValidationError,
+    IndexGenerationMismatchError,
+    RetrievalConfig,
+    RetrievalService,
+    validate_citation,
+)
 from tests.documents.test_ingestion import FakeEmbedder
 
 
@@ -65,6 +72,36 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(response.results[0].citation.document_id, result.document_id)
         self.assertEqual(response.results[0].score_type, "bm25")
         self.assertEqual(len(self.embedder.calls), call_count)
+
+    def test_streaming_bm25_matches_complete_corpus_reference_scores(self):
+        self._write_and_ingest("one.txt", "needle revenue 42 and operating profit.")
+        self._write_and_ingest("two.txt", "needle revenue 57 and expenses.")
+        active = self.repository.list_active("workspace-a")
+        from experiments.rag_prototype import BM25Index
+        from nexus_ai.retrieval.service import _to_prototype_chunk
+        all_chunks = [chunk for indexed in active for chunk in indexed.chunks]
+        reference = BM25Index(tuple(_to_prototype_chunk(chunk) for chunk in all_chunks)).search("needle revenue", top_k=5)
+        actual = self.retriever.retrieve("needle revenue", workspace_id="workspace-a", strategy="bm25_raw", top_k=5)
+        self.assertEqual([row.citation.chunk_id for row in actual.results],
+                         [hit.chunk.chunk_id for hit in reference])
+        self.assertEqual([row.score for row in actual.results], [hit.score for hit in reference])
+
+    def test_streaming_bm25_fails_if_active_generation_changes_between_passes(self):
+        self._write_and_ingest("one.txt", "needle first pass snapshot.")
+        original = self.repository.list_active("workspace-a")[0]
+
+        class ChangingRepository:
+            def __init__(self): self.passes = 0
+            def iter_active(self, workspace_id, filters=None):
+                self.passes += 1
+                row = original if self.passes == 1 else replace(original, index_generation_id="f" * 64)
+                yield row
+            def list_active(self, workspace_id, filters=None):
+                raise AssertionError("streaming BM25 must not materialize the corpus")
+
+        service = RetrievalService(repository=ChangingRepository(), embedder=self.embedder)
+        with self.assertRaisesRegex(RuntimeError, "changed during BM25"):
+            service.retrieve("needle", workspace_id="workspace-a", strategy="bm25_raw")
 
     def test_empty_results_filters_and_workspace_isolation(self):
         result = self._write_and_ingest("facts.md", "needle evidence lives here.")
@@ -169,17 +206,101 @@ class RetrievalServiceTests(unittest.TestCase):
         after = self.retriever.retrieve("needle", workspace_id="workspace-a", strategy="bm25_raw")
         self.assertEqual(after.results[0].citation.exact_text, "needle source version 20.")
 
-    def test_in_memory_repo_does_not_mix_embedding_revisions_per_workspace(self):
-        from nexus_ai.documents.service import DocumentIngestionService
-        from tests.documents.test_ingestion import FakeEmbedder
-        self._write_and_ingest("one.txt", "needle first.")
+    def test_index_generation_changes_for_model_window_and_chunker_config(self):
+        path = self.root / "identity.txt"
+        path.write_text("needle source with enough content for multiple windows and chunks. " * 3,
+                        encoding="utf-8")
+        first = self.ingestion.ingest("workspace-a", "identity.txt")
+        first_index = self.repository.get_active("workspace-a", first.document_id)
+
         changed_provider = FakeEmbedder()
         changed_provider.revision = "fedcba9876543210fedcba9876543210fedcba98"
-        second_service = DocumentIngestionService(
+        model_service = DocumentIngestionService(
             approved_root=self.root, repository=self.repository, embedder=changed_provider,
-            limits=DocumentIngestionLimits(window_chars=20, window_overlap_chars=3),
+            chunker=self.ingestion.chunker,
+            limits=DocumentIngestionLimits(window_chars=18, window_overlap_chars=4),
         )
-        (self.root / "two.txt").write_text("needle second", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "embedding model/revision"):
-            second_service.ingest("workspace-a", "two.txt")
-        self.assertEqual(len(self.repository.list_active("workspace-a")), 1)
+        model_result = model_service.ingest("workspace-a", "identity.txt")
+        model_index = self.repository.get_active("workspace-a", model_result.document_id)
+        self.assertEqual(model_result.version_id, first.version_id)
+        self.assertNotEqual(model_index.index_generation_id, first_index.index_generation_id)
+        with self.assertRaises(IndexGenerationMismatchError):
+            self.retriever.retrieve("needle", workspace_id="workspace-a")
+        changed_retriever = RetrievalService(repository=self.repository, embedder=changed_provider)
+        self.assertEqual(changed_retriever.retrieve("needle", workspace_id="workspace-a").status, "ok")
+
+        window_service = DocumentIngestionService(
+            approved_root=self.root, repository=self.repository, embedder=changed_provider,
+            chunker=self.ingestion.chunker,
+            limits=DocumentIngestionLimits(window_chars=22, window_overlap_chars=5),
+        )
+        window_result = window_service.ingest("workspace-a", "identity.txt")
+        window_index = self.repository.get_active("workspace-a", window_result.document_id)
+        self.assertEqual(window_result.version_id, first.version_id)
+        self.assertNotEqual(window_index.index_generation_id, model_index.index_generation_id)
+
+        chunker = SourceAwareChunker(ChunkingConfig(max_chars=32, overlap_chars=6))
+        chunker_service = DocumentIngestionService(
+            approved_root=self.root, repository=self.repository, embedder=changed_provider,
+            chunker=chunker,
+            limits=DocumentIngestionLimits(window_chars=22, window_overlap_chars=5),
+        )
+        chunker_result = chunker_service.ingest("workspace-a", "identity.txt")
+        chunker_index = self.repository.get_active("workspace-a", chunker_result.document_id)
+        self.assertEqual(chunker_result.version_id, first.version_id)
+        self.assertNotEqual(chunker_index.index_generation_id, window_index.index_generation_id)
+        self.assertNotEqual(
+            {chunk.chunk_id for chunk in chunker_index.chunks},
+            {chunk.chunk_id for chunk in window_index.chunks},
+        )
+
+        from nexus_ai.documents.types import ExtractedPage, ExtractionResult
+        class ChangedExtractor:
+            name = "utf8-text"
+            version = "extractor-v2"
+            def extract(self, content, *, source_path):
+                text = content.decode("utf-8-sig", errors="strict")
+                return ExtractionResult(
+                    self.name, self.version, "text/plain",
+                    (ExtractedPage(None, text),), offsets_reliable=True,
+                )
+        extraction_service = DocumentIngestionService(
+            approved_root=self.root, repository=self.repository, embedder=changed_provider,
+            chunker=chunker,
+            extractors={".txt": ChangedExtractor()},
+            limits=DocumentIngestionLimits(window_chars=22, window_overlap_chars=5),
+        )
+        extraction_result = extraction_service.ingest("workspace-a", "identity.txt")
+        extraction_index = self.repository.get_active("workspace-a", extraction_result.document_id)
+        self.assertEqual(extraction_result.version_id, first.version_id)
+        self.assertNotEqual(extraction_index.document.processing_id, chunker_index.document.processing_id)
+        self.assertNotEqual(extraction_index.index_generation_id, chunker_index.index_generation_id)
+
+    def test_preflight_vector_coordinate_budget_avoids_embedding(self):
+        path = self.root / "bounded.txt"
+        path.write_text("needle content that creates more than one window", encoding="utf-8")
+        bounded = FakeEmbedder()
+        service = DocumentIngestionService(
+            approved_root=self.root, repository=self.repository, embedder=bounded,
+            limits=DocumentIngestionLimits(window_chars=8, window_overlap_chars=2,
+                                           max_vector_coordinates=2),
+        )
+        with self.assertRaisesRegex(ValueError, "before embedding"):
+            service.ingest("workspace-a", "bounded.txt")
+        self.assertEqual(bounded.calls, [])
+
+    def test_dense_retrieval_consumes_streaming_repository_without_list_materialization(self):
+        source = self._write_and_ingest("stream.md", "needle evidence in a streamed source.")
+        rows = self.repository.list_active("workspace-a")
+
+        class StreamingRepository:
+            def iter_active(self, workspace_id, filters=None):
+                for row in rows:
+                    yield row
+            def list_active(self, workspace_id, filters=None):
+                raise AssertionError("dense retrieval must use iter_active")
+
+        streaming = RetrievalService(repository=StreamingRepository(), embedder=self.embedder)
+        response = streaming.retrieve("needle", workspace_id="workspace-a")
+        self.assertEqual(response.status, "ok")
+        self.assertEqual(response.results[0].citation.document_id, source.document_id)

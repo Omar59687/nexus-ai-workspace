@@ -48,6 +48,7 @@ class DocumentVersion:
     workspace_id: str
     document_id: str
     version_id: str
+    processing_id: str
     source_path: str
     content_sha256: str
     media_type: str
@@ -80,6 +81,10 @@ class IndexedDocument:
     embedding_model_id: str
     embedding_revision: str
     embedding_dimensions: int
+    index_generation_id: str
+    window_chars: int
+    window_overlap_chars: int
+    preprocessing_id: str
 
 
 @dataclass(frozen=True)

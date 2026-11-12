@@ -3,12 +3,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import RLock
-from typing import Protocol, Sequence
+from typing import Iterable, Protocol, Sequence
 from pathlib import PurePosixPath
 import re
 
 from nexus_ai.documents.types import IndexedDocument, IngestionFailure, RetrievalFilters
 from nexus_ai.retrieval.embeddings import validate_vector
+from nexus_ai.retrieval.identity import (
+    stable_index_generation_id,
+    stable_processing_id,
+    stable_source_version_id,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,7 @@ class DocumentIndexRepository(Protocol):
     def activate(self, indexed: IndexedDocument) -> bool: ...
     def get_active(self, workspace_id: str, document_id: str) -> IndexedDocument | None: ...
     def list_active(self, workspace_id: str, filters: RetrievalFilters | None = None) -> tuple[IndexedDocument, ...]: ...
+    def iter_active(self, workspace_id: str, filters: RetrievalFilters | None = None) -> Iterable[IndexedDocument]: ...
     def delete(self, workspace_id: str, document_id: str) -> bool: ...
     def record_failure(self, failure: IngestionFailure) -> None: ...
 
@@ -52,18 +58,12 @@ class InMemoryDocumentIndex:
         key = (indexed.document.workspace_id, indexed.document.document_id)
         with self._lock:
             old = self._active.get(key)
-            if old is not None and old.document.version_id == indexed.document.version_id:
+            if old is not None and old.index_generation_id == indexed.index_generation_id:
                 if old != indexed:
-                    raise ValueError("same document version was indexed with conflicting content or vectors")
+                    raise ValueError("same index generation was activated with conflicting content or vectors")
                 return False
             candidate = dict(self._active)
             candidate[key] = indexed
-            workspace_indexes = [row for (workspace, _), row in candidate.items()
-                                 if workspace == indexed.document.workspace_id]
-            if any((row.embedding_model_id, row.embedding_revision, row.embedding_dimensions)
-                   != (indexed.embedding_model_id, indexed.embedding_revision, indexed.embedding_dimensions)
-                   for row in workspace_indexes):
-                raise ValueError("active workspace index contains a different embedding model/revision")
             self._validate_capacity(candidate.values())
             # The single reference swap is the transaction boundary: readers see
             # either complete version, never a partial set of chunks/windows.
@@ -90,6 +90,16 @@ class InMemoryDocumentIndex:
             documents = [doc for doc in documents if any(c.page_number == selected.page_number for c in doc.chunks)]
         documents.sort(key=lambda doc: (doc.document.source_path, doc.document.document_id))
         return tuple(documents)
+
+    def iter_active(
+        self,
+        workspace_id: str,
+        filters: RetrievalFilters | None = None,
+    ) -> Iterable[IndexedDocument]:
+        # In-memory storage already owns the full bounded index. Durable adapters
+        # should override this and yield one document at a time from a stable
+        # database snapshot.
+        return iter(self.list_active(workspace_id, filters))
 
     def delete(self, workspace_id: str, document_id: str) -> bool:
         _validate_workspace_id(workspace_id)
@@ -133,8 +143,12 @@ class InMemoryDocumentIndex:
 def _validate_indexed_document(indexed: IndexedDocument) -> None:
     document = indexed.document
     _validate_workspace_id(document.workspace_id)
-    if not document.document_id or not document.version_id or not document.source_path:
+    if not document.document_id or not document.version_id or not document.processing_id or not document.source_path:
         raise ValueError("indexed document identity and source are required")
+    if document.version_id != stable_source_version_id(document.document_id, document.content_sha256):
+        raise ValueError("source version ID does not match document identity and content")
+    if not re.fullmatch(r"[0-9a-f]{64}", document.processing_id):
+        raise ValueError("processing ID must be a SHA-256 identity")
     source_path = PurePosixPath(document.source_path)
     if source_path.is_absolute() or ".." in source_path.parts or "\\" in document.source_path:
         raise ValueError("source_path must be a safe workspace-relative POSIX path")
@@ -147,6 +161,7 @@ def _validate_indexed_document(indexed: IndexedDocument) -> None:
         raise ValueError("duplicate chunk IDs are not allowed")
     if any(chunk.document_id != document.document_id or chunk.version_id != document.version_id
            or chunk.source_path != document.source_path or chunk.source_sha256 != document.content_sha256
+           or chunk.chunker_version != document.chunker_version
            for chunk in indexed.chunks):
         raise ValueError("chunk provenance does not match its document version")
     pages = {page.page_number: page.text for page in document.pages}
@@ -183,6 +198,37 @@ def _validate_indexed_document(indexed: IndexedDocument) -> None:
         raise ValueError("embedding model identity and revision are required")
     if type(indexed.embedding_dimensions) is not int or indexed.embedding_dimensions <= 0:
         raise ValueError("embedding_dimensions must be a positive integer")
+    if type(indexed.window_chars) is not int or not 1 <= indexed.window_chars <= 4_096:
+        raise ValueError("window_chars must be between 1 and 4096")
+    if type(indexed.window_overlap_chars) is not int or not 0 <= indexed.window_overlap_chars < indexed.window_chars:
+        raise ValueError("window_overlap_chars must be less than window_chars")
+    if not isinstance(indexed.preprocessing_id, str) or not indexed.preprocessing_id.strip():
+        raise ValueError("preprocessing identity is required")
+    if not re.fullmatch(r"[0-9a-f]{64}", document.chunker_version):
+        raise ValueError("chunker fingerprint must be a SHA-256 identity")
+    expected_processing_id = stable_processing_id(
+        extractor_name=document.extractor_name,
+        extractor_version=document.extractor_version,
+        media_type=document.media_type,
+        offsets_reliable=document.offsets_reliable,
+        chunker_fingerprint=document.chunker_version,
+    )
+    if document.processing_id != expected_processing_id:
+        raise ValueError("processing ID does not match extraction and chunking metadata")
+    expected_generation = stable_index_generation_id(
+        document_id=document.document_id,
+        source_version_id=document.version_id,
+        processing_id=document.processing_id,
+        embedding_model_id=indexed.embedding_model_id,
+        embedding_revision=indexed.embedding_revision,
+        embedding_dimensions=indexed.embedding_dimensions,
+        chunker_fingerprint=document.chunker_version,
+        window_chars=indexed.window_chars,
+        window_overlap_chars=indexed.window_overlap_chars,
+        preprocessing_id=indexed.preprocessing_id,
+    )
+    if not re.fullmatch(r"[0-9a-f]{64}", indexed.index_generation_id) or indexed.index_generation_id != expected_generation:
+        raise ValueError("index generation ID does not match its configuration")
     if any(len(window.vector) != indexed.embedding_dimensions for window in indexed.windows):
         raise ValueError("window vector dimensions do not match index metadata")
     for window in indexed.windows:

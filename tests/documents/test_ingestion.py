@@ -13,6 +13,7 @@ from nexus_ai.documents.extractors import (
     PdfExtractor,
     extractor_for_path,
 )
+from nexus_ai.documents.pdf_worker import IsolatedPdfExtractor
 from nexus_ai.documents.service import DocumentIngestionLimits, DocumentIngestionService
 from nexus_ai.documents.types import ExtractionResult, ExtractedPage
 from nexus_ai.retrieval.embeddings import EmbeddingUnavailableError
@@ -22,6 +23,8 @@ from nexus_ai.retrieval.repository import InMemoryDocumentIndex, RepositoryLimit
 class FakeEmbedder:
     model_id = "fake/multilingual-e5"
     revision = "0123456789abcdef0123456789abcdef01234567"
+    preprocessing_id = "fake-language-vector-v1"
+    embedding_dimensions = 2
 
     def __init__(self, fail=False, vector=None):
         self.fail = fail
@@ -74,6 +77,7 @@ class ExtractorTests(unittest.TestCase):
         self.assertEqual(extractor_for_path("guide.TXT").extract("عربي".encode(), source_path="guide.TXT").pages[0].text,
                          "عربي")
         self.assertEqual(extractor_for_path("guide.MD").media_type, "text/markdown")
+        self.assertIsInstance(extractor_for_path("report.pdf"), IsolatedPdfExtractor)
         with self.assertRaisesRegex(DocumentExtractionError, "unsupported"):
             extractor_for_path("guide.docx")
         with self.assertRaisesRegex(DocumentExtractionError, "UTF-8"):
@@ -126,6 +130,21 @@ class ChunkingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no extractable text"):
             chunker.chunk(ExtractionResult("fake", "1", "text/plain", (ExtractedPage(None, ""),)),
                           document_id="d", version_id="v", source_path="x.txt", source_sha256="b" * 64)
+
+    def test_newline_and_heading_heavy_pages_hit_explicit_complexity_caps(self):
+        from unittest.mock import patch
+        chunker = SourceAwareChunker(ChunkingConfig(max_chars=20, overlap_chars=2))
+        plain = ExtractionResult("fake", "1", "text/plain", (ExtractedPage(None, "a\nb\nc\nd\n"),))
+        with patch("nexus_ai.documents.chunking.MAX_LINES_PER_PAGE", 3):
+            with self.assertRaisesRegex(ValueError, "max_lines_per_page"):
+                chunker.chunk(plain, document_id="d", version_id="v", source_path="x.txt",
+                              source_sha256="c" * 64)
+        markdown = ExtractionResult("fake", "1", "text/markdown",
+                                    (ExtractedPage(None, "# one\n# two\n# three\n"),))
+        with patch("nexus_ai.documents.chunking.MAX_MARKDOWN_HEADINGS_PER_PAGE", 2):
+            with self.assertRaisesRegex(ValueError, "max_markdown_headings_per_page"):
+                chunker.chunk(markdown, document_id="d", version_id="v", source_path="x.md",
+                              source_sha256="c" * 64)
 
 
 class IngestionTests(unittest.TestCase):
@@ -208,6 +227,17 @@ class IngestionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "byte limit"):
             capped.ingest("workspace-a", "ok.txt")
+
+    def test_pdf_ingestion_rejects_unisolated_in_process_extractors(self):
+        path = self.root / "unsafe.pdf"
+        path.write_bytes(b"not parsed because the extractor boundary is rejected")
+        service = DocumentIngestionService(
+            approved_root=self.root, repository=self.repo, embedder=self.embedder,
+            extractors={".pdf": PdfExtractor()},
+        )
+        with self.assertRaisesRegex(ValueError, "isolated parser worker"):
+            service.ingest("workspace-a", "unsafe.pdf")
+        self.assertEqual(self.repo.list_active("workspace-a"), ())
 
     def test_empty_and_prompt_injection_text_are_only_source_data(self):
         empty = self.root / "empty.txt"

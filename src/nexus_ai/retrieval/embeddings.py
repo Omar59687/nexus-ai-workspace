@@ -37,6 +37,9 @@ class EmbeddingProvider(Protocol):
 class E5EmbeddingProvider:
     """Adapter for the existing pinned multilingual E5 encoder; never downloads."""
 
+    preprocessing_id = "e5-query-passage-prefix-mean-pooling-l2-v1"
+    embedding_dimensions = 384
+
     def __init__(
         self,
         *,
@@ -156,10 +159,14 @@ def embed_windows(
     provider: EmbeddingProvider,
     *,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    max_vector_coordinates: int | None = None,
 ) -> tuple[tuple[float, ...], ...]:
     _positive_integer(batch_size, "batch_size")
+    if max_vector_coordinates is not None:
+        _positive_integer(max_vector_coordinates, "max_vector_coordinates")
     vectors: list[tuple[float, ...]] = []
     dimensions: int | None = None
+    coordinates = 0
     for start in range(0, len(drafts), batch_size):
         batch = drafts[start:start + batch_size]
         encoded = provider.embed([row.text for row in batch], input_type="passage")
@@ -168,6 +175,9 @@ def embed_windows(
         for vector in encoded:
             clean = validate_vector(vector, dimensions=dimensions)
             dimensions = dimensions or len(clean)
+            coordinates += len(clean)
+            if max_vector_coordinates is not None and coordinates > max_vector_coordinates:
+                raise ValueError("index exceeds max_vector_coordinates during embedding")
             vectors.append(clean)
     return tuple(vectors)
 

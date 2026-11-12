@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
-from experiments.rag_prototype import BM25Index, Chunk, ChunkHit, exact_cosine
+from experiments.rag_prototype import BM25Index, Chunk, ChunkHit, exact_cosine, tokenize
 from nexus_ai.documents.types import RetrievalFilters, RetrievalMatch, SourceChunk
 from nexus_ai.retrieval.embeddings import EmbeddingProvider, validate_vector
 from nexus_ai.retrieval.repository import DocumentIndexRepository
@@ -21,16 +22,33 @@ class CitationValidationError(ValueError):
     """Raised when retrieved provenance does not match the stored source version."""
 
 
+class IndexGenerationMismatchError(RuntimeError):
+    """Raised when query embeddings are incompatible with active document generations."""
+
+
+class IndexSnapshotChangedError(RuntimeError):
+    """Raised when a two-pass lexical scan observes different active generations."""
+
+
 @dataclass(frozen=True)
 class RetrievalConfig:
     max_top_k: int = MAX_TOP_K
-    max_windows: int = MAX_RETRIEVAL_WINDOWS
+    max_windows: int = MAX_RETRIEVAL_WINDOWS  # per document
+    max_total_windows: int = 1_000_000
+    max_bm25_chunks: int = 100_000
+    max_bm25_tokens: int = 20_000_000
 
     def __post_init__(self) -> None:
         if type(self.max_top_k) is not int or not 1 <= self.max_top_k <= 100:
             raise ValueError("max_top_k must be between 1 and 100")
         if type(self.max_windows) is not int or self.max_windows <= 0:
             raise ValueError("max_windows must be a positive integer")
+        if type(self.max_total_windows) is not int or self.max_total_windows < self.max_windows:
+            raise ValueError("max_total_windows must be at least max_windows")
+        if type(self.max_bm25_chunks) is not int or self.max_bm25_chunks <= 0:
+            raise ValueError("max_bm25_chunks must be positive")
+        if type(self.max_bm25_tokens) is not int or self.max_bm25_tokens <= 0:
+            raise ValueError("max_bm25_tokens must be positive")
 
 
 class RetrievalService:
@@ -60,22 +78,11 @@ class RetrievalService:
         filters = filters or RetrievalFilters()
         if filters.page_number is not None and (type(filters.page_number) is not int or filters.page_number <= 0):
             raise ValueError("page_number filter must be a positive integer")
-        documents = self.repository.list_active(workspace_id, filters)
-        if any(indexed.document.workspace_id != workspace_id for indexed in documents):
-            raise CitationValidationError("repository returned an index outside the requested workspace")
-        candidate_chunks = [
-            chunk for indexed in documents for chunk in indexed.chunks
-            if filters.page_number is None or chunk.page_number == filters.page_number
-        ]
-        candidate_chunks.sort(key=lambda chunk: chunk.chunk_id)
-        if not candidate_chunks:
-            return RetrievalResponse(workspace_id=workspace_id, strategy=strategy, status="empty", results=[])
-
-        if strategy == "bm25_raw":
-            matches = self._bm25(query, candidate_chunks, documents, top_k)
+        rows_factory = lambda: _iter_active(self.repository, workspace_id, filters)
+        if strategy == "windowed_e5":
+            results = self._windowed_e5_stream(query, rows_factory(), workspace_id, filters, top_k)
         else:
-            matches = self._windowed_e5(query, candidate_chunks, documents, top_k)
-        results = [_to_evidence(match, workspace_id, documents) for match in matches]
+            results = self._bm25_stream(query, rows_factory, workspace_id, filters, top_k)
         return RetrievalResponse(
             workspace_id=workspace_id,
             strategy=strategy,
@@ -148,6 +155,146 @@ class RetrievalService:
             ))
         matches.sort(key=lambda row: (-row.score, row.chunk.chunk_id))
         return tuple(matches[:top_k])
+
+    def _windowed_e5_stream(self, query, indexed_rows, workspace_id, filters, top_k):
+        """Scan one document generation at a time and retain only top-k evidence.
+
+        Durable adapters can therefore avoid constructing a Python object for
+        every document, full source page, and vector in a workspace at once.
+        Every active generation must be compatible; mixed model generations
+        fail closed instead of returning partial-corpus results.
+        """
+        expected = (self.embedder.model_id, self.embedder.revision,
+                    getattr(self.embedder, "preprocessing_id", None))
+        query_vector = None
+        dimensions = None
+        scanned_windows = 0
+        best: dict[str, tuple[RetrievalMatch, object]] = {}
+        for indexed in indexed_rows:
+            if indexed.document.workspace_id != workspace_id:
+                raise CitationValidationError("repository returned an index outside the requested workspace")
+            if (indexed.embedding_model_id, indexed.embedding_revision, indexed.preprocessing_id) != expected:
+                raise IndexGenerationMismatchError(
+                    "active index generation does not match the query embedding model, revision, or preprocessing"
+                )
+            if dimensions is None:
+                dimensions = indexed.embedding_dimensions
+                query_vectors = self.embedder.embed([query], input_type="query")
+                if len(query_vectors) != 1:
+                    raise ValueError("embedding provider returned the wrong number of query vectors")
+                query_vector = validate_vector(query_vectors[0], dimensions=dimensions)
+            elif indexed.embedding_dimensions != dimensions:
+                raise IndexGenerationMismatchError("active index generations use inconsistent dimensions")
+            windows = indexed.windows
+            if len(windows) > self.config.max_windows:
+                raise ValueError("document index exceeds max_windows")
+            scanned_windows += len(windows)
+            if scanned_windows > self.config.max_total_windows:
+                raise ValueError("workspace retrieval exceeds max_total_windows")
+            if not windows:
+                continue
+            vector_map = {window.window_id: window.vector for window in windows}
+            ranked = exact_cosine(
+                query_vector, vector_map, top_k=len(windows), max_vectors=self.config.max_windows,
+            )
+            window_by_id = {window.window_id: window for window in windows}
+            chunk_by_id = {chunk.chunk_id: chunk for chunk in indexed.chunks}
+            doc_best: dict[str, tuple[float, object]] = {}
+            for item in ranked:
+                window = window_by_id[item.item_id]
+                previous = doc_best.get(window.chunk_id)
+                if previous is None or item.score > previous[0]:
+                    doc_best[window.chunk_id] = (item.score, window)
+            for chunk_id, (score, window) in doc_best.items():
+                chunk = chunk_by_id[chunk_id]
+                if chunk.version_id != indexed.document.version_id:
+                    continue
+                match = RetrievalMatch(
+                    chunk=chunk, score=score, score_type="cosine_similarity",
+                    strategy="windowed_e5", matched_window_id=window.window_id,
+                    matched_window_start_char=window.start_char,
+                    matched_window_end_char=window.end_char,
+                )
+                best[chunk_id] = (match, indexed)
+            if len(best) > top_k:
+                ordered = sorted(best.items(), key=lambda item: (-item[1][0].score, item[0]))[:top_k]
+                best = dict(ordered)
+        ordered = sorted(best.values(), key=lambda row: (-row[0].score, row[0].chunk.chunk_id))[:top_k]
+        return [_to_evidence(match, workspace_id, (indexed,)) for match, indexed in ordered]
+
+    def _bm25_stream(self, query, rows_factory, workspace_id, filters, top_k):
+        """Compute corpus IDF in one pass and retain top-k hits in a second.
+
+        Only token counts and document-generation IDs survive the first pass;
+        full pages, chunks, and vectors are loaded one document at a time. A
+        changed active-generation set between passes fails closed.
+        """
+        query_terms = set(tokenize(query))
+        if not query_terms:
+            return []
+        document_generations: dict[str, tuple[str, str]] = {}
+        frequencies = Counter()
+        corpus_chunks = 0
+        total_tokens = 0
+        for indexed in rows_factory():
+            _assert_workspace(indexed, workspace_id)
+            document_id = indexed.document.document_id
+            if document_id in document_generations:
+                raise CitationValidationError("repository returned a duplicate active document")
+            document_generations[document_id] = (
+                indexed.document.version_id, indexed.index_generation_id,
+            )
+            for chunk in indexed.chunks:
+                if filters.page_number is not None and chunk.page_number != filters.page_number:
+                    continue
+                tokens = tokenize(chunk.text)
+                total_tokens += len(tokens)
+                corpus_chunks += 1
+                if corpus_chunks > self.config.max_bm25_chunks:
+                    raise ValueError("BM25 corpus exceeds max_bm25_chunks")
+                if total_tokens > self.config.max_bm25_tokens:
+                    raise ValueError("BM25 corpus exceeds max_bm25_tokens")
+                frequencies.update(set(tokens) & query_terms)
+        if not corpus_chunks or not total_tokens:
+            return []
+        average_length = total_tokens / corpus_chunks
+        idf = {
+            term: math.log1p((corpus_chunks - count + 0.5) / (count + 0.5))
+            for term, count in frequencies.items()
+        }
+        if not idf:
+            return []
+
+        second_generations: dict[str, tuple[str, str]] = {}
+        best: list[tuple[RetrievalMatch, object]] = []
+        for indexed in rows_factory():
+            _assert_workspace(indexed, workspace_id)
+            document = indexed.document
+            if document.document_id in second_generations:
+                raise CitationValidationError("repository returned a duplicate active document")
+            second_generations[document.document_id] = (
+                document.version_id, indexed.index_generation_id,
+            )
+            for chunk in indexed.chunks:
+                if filters.page_number is not None and chunk.page_number != filters.page_number:
+                    continue
+                tokens = tokenize(chunk.text)
+                terms = Counter(tokens)
+                length_penalty = 1.2 * (0.25 + 0.75 * len(tokens) / average_length)
+                score = math.fsum(
+                    idf[term] * (2.2 * terms[term]) / (terms[term] + length_penalty)
+                    for term in idf if terms[term]
+                )
+                if score <= 0:
+                    continue
+                best.append((RetrievalMatch(chunk, score, "bm25", "bm25_raw"), indexed))
+                if len(best) > top_k:
+                    best.sort(key=lambda row: (-row[0].score, row[0].chunk.chunk_id))
+                    del best[top_k:]
+        if document_generations != second_generations:
+            raise IndexSnapshotChangedError("active document generations changed during BM25 retrieval")
+        best.sort(key=lambda row: (-row[0].score, row[0].chunk.chunk_id))
+        return [_to_evidence(match, workspace_id, (indexed,)) for match, indexed in best[:top_k]]
 
 
 def _to_evidence(match: RetrievalMatch, workspace_id: str, documents) -> RetrievedEvidence:
@@ -233,3 +380,15 @@ def _validate_request(query: str, workspace_id: str, top_k: int, strategy: str, 
         raise ValueError(f"top_k must be between 1 and {config.max_top_k}")
     if strategy not in ("windowed_e5", "bm25_raw"):
         raise ValueError("unsupported retrieval strategy")
+
+
+def _iter_active(repository, workspace_id, filters):
+    iterator = getattr(repository, "iter_active", None)
+    if callable(iterator):
+        return iterator(workspace_id, filters)
+    return iter(repository.list_active(workspace_id, filters))
+
+
+def _assert_workspace(indexed, workspace_id):
+    if indexed.document.workspace_id != workspace_id:
+        raise CitationValidationError("repository returned an index outside the requested workspace")

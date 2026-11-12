@@ -2,7 +2,7 @@
 
 **Document role:** Verified current architecture and intended target architecture, kept separate.
 
-**Last verified:** 2026-11-11 against isolated baseline `19269930c25392343219587d6b70f1db6f6cca76` and the uncommitted timeout/harness follow-up. The owner checkout was not modified.
+**Candidate update:** 2026-11-12, based on experimental branch parent `5083df9db1b7baf468251c85a1d462dfbc4bf0af`. The Phase 4 services below are standalone candidate code, not activated routes or accepted production architecture. PostgreSQL and Windows integration remain unverified in this runtime.
 
 **Rule:** A module is "implemented" only when code exists in the stated location. A module is "accepted" only when `docs/PROJECT_CHECKPOINTS.md` records tests, evidence, and review. Future modules must never be drawn or described as if they exist.
 
@@ -184,6 +184,30 @@ There are no workspace, project, user, membership, document, chunk, embedding, m
 - Logging is Python standard logging. Prompts are not intentionally logged; error messages are generic.
 - Local benchmark reports may contain prompts and model responses and are Git-ignored under `local_data/`.
 - The application is intended for local development only at this stage.
+
+### 1.8 Experimental Phase 4 backend candidate (not wired into the app)
+
+The candidate branch adds backend services that can be exercised directly in
+tests. They are not imported by `main.py`, are not exposed through HTTP routes,
+and do not change the default LLM or the existing application database.
+
+| Area | Candidate modules | Current boundary |
+| --- | --- | --- |
+| Document intake | `src/nexus_ai/documents/filesystem.py`, `extractors.py`, `pdf_worker.py`, `chunking.py`, `service.py` | Explicit file only; UTF-8/Markdown in process; PDF defaults to an isolated worker on POSIX and fails closed on Windows until a verified Job Object runner exists |
+| Identity and embedding | `src/nexus_ai/retrieval/identity.py`, `embeddings.py` | Stable source version, processing identity and index generation; pinned E5 loads only cached weights; fake encoders used in unit tests |
+| Index lifecycle | `src/nexus_ai/retrieval/repository.py` | Bounded volatile in-memory implementation with atomic active-generation swap; no durable DB activation |
+| PostgreSQL proposal | `src/nexus_ai/retrieval/postgres_repository.py` | Candidate DB-API adapter and inert DDL; no Alembic migration applied and no disposable PostgreSQL verification in this runtime |
+| Retrieval | `src/nexus_ai/retrieval/service.py` | Dense E5 scans one document generation at a time through `iter_active`; raw BM25 comparison uses an in-memory corpus snapshot; model/preprocessing mismatches fail closed |
+| Answering | `src/nexus_ai/retrieval/answering.py` | Injected local structured adapter, prior validated citations, numeric-token guard and abstention; no live Ollama run or semantic claim-entailment guarantee |
+| API contracts | `src/nexus_ai/documents/api_contracts.py` | Typed adapters require an injected workspace context; this is not authentication and no routes exist |
+| Synthetic workload | `experiments/rag_prototype/workload.py` | BM25 capacity/evaluation plumbing only; labels are synthetic and do not measure multilingual semantic quality |
+
+The active application still has no authentication or workspace authorization.
+No untrusted caller can reach these candidate services through an application
+route in this branch. Do not route them until a trusted identity integration,
+reviewed persistence schema, platform-specific file isolation, and acceptance
+gates are complete. See `docs/P4_COMPLETE_BACKEND_CANDIDATE.md` for test counts
+and explicit blockers.
 
 ## 2. Intended target architecture (not implemented)
 

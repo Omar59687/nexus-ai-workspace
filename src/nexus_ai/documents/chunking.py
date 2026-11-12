@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 
 from nexus_ai.documents.types import ExtractionResult, SourceChunk
 
 
 _HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)\s*#*\s*$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+MAX_LINES_PER_PAGE = 250_000
+MAX_MARKDOWN_HEADINGS_PER_PAGE = 100_000
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,19 @@ class SourceAwareChunker:
     def __init__(self, config: ChunkingConfig = ChunkingConfig()) -> None:
         self.config = config
 
+    @property
+    def fingerprint(self) -> str:
+        identity = {
+            "algorithm": self.version,
+            "max_chars": self.config.max_chars,
+            "overlap_chars": self.config.overlap_chars,
+            "boundary_policy": "paragraph-line-table-row-v1",
+            "markdown_heading_policy": "fenced-aware-v1",
+            "max_lines_per_page": MAX_LINES_PER_PAGE,
+            "max_markdown_headings_per_page": MAX_MARKDOWN_HEADINGS_PER_PAGE,
+        }
+        return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
     def chunk(
         self,
         extraction: ExtractionResult,
@@ -48,7 +64,7 @@ class SourceAwareChunker:
             text = page.text
             if not text:
                 continue
-            line_starts = [0, *(m.end() for m in re.finditer(r"\r\n|\r|\n", text))]
+            line_starts = _line_starts(text)
             heading_positions = _heading_positions(text, line_starts) if extraction.media_type == "text/markdown" else []
             start = 0
             while start < len(text):
@@ -59,7 +75,7 @@ class SourceAwareChunker:
                 body = text[start:end]
                 page_id = "none" if page.page_number is None else str(page.page_number)
                 text_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
-                material = "\0".join((document_id, version_id, self.version, page_id,
+                material = "\0".join((document_id, version_id, self.fingerprint, page_id,
                                       str(start), str(end), text_hash))
                 chunk_id = hashlib.sha256(material.encode("utf-8")).hexdigest()
                 start_line = bisect_right(line_starts, start) if extraction.offsets_reliable else None
@@ -81,15 +97,16 @@ class SourceAwareChunker:
                     text=body,
                     heading_path=heading_path,
                     offsets_reliable=extraction.offsets_reliable,
-                    chunker_version=self.version,
+                    chunker_version=self.fingerprint,
                 ))
                 if len(chunks) > self.config.max_chunks:
                     raise ValueError("document exceeds max_chunks")
                 if end == len(text):
                     break
                 desired = max(start + 1, end - self.config.overlap_chars)
-                next_boundaries = [boundary for boundary in line_starts if desired <= boundary < end]
-                start = next_boundaries[0] if next_boundaries else desired
+                boundary_index = bisect_left(line_starts, desired)
+                boundary = line_starts[boundary_index] if boundary_index < len(line_starts) else end
+                start = boundary if boundary < end else desired
         if not chunks:
             raise ValueError("document contains no extractable text")
         return tuple(chunks)
@@ -107,12 +124,23 @@ def _prefer_line_boundary(text: str, start: int, hard_end: int) -> int:
     return start + lines[-1] if lines else hard_end
 
 
+def _line_starts(text: str) -> list[int]:
+    starts = [0]
+    for match in re.finditer(r"\r\n|\r|\n", text):
+        if len(starts) >= MAX_LINES_PER_PAGE:
+            raise ValueError("page exceeds max_lines_per_page")
+        starts.append(match.end())
+    return starts
+
+
 def _heading_positions(text: str, line_starts: list[int]) -> list[tuple[int, tuple[str, ...]]]:
     headings: list[tuple[int, str]] = []
     positions: list[tuple[int, tuple[str, ...]]] = [(0, ())]
     fence_char: str | None = None
     fence_size = 0
-    for start, end in zip(line_starts, (*line_starts[1:], len(text))):
+    heading_count = 0
+    for line_index, start in enumerate(line_starts):
+        end = line_starts[line_index + 1] if line_index + 1 < len(line_starts) else len(text)
         line = text[start:end].rstrip("\r\n")
         fence = _FENCE.match(line)
         if fence_char:
@@ -127,6 +155,9 @@ def _heading_positions(text: str, line_starts: list[int]) -> list[tuple[int, tup
         match = _HEADING.match(line)
         if not match:
             continue
+        heading_count += 1
+        if heading_count > MAX_MARKDOWN_HEADINGS_PER_PAGE:
+            raise ValueError("page exceeds max_markdown_headings_per_page")
         level, title = len(match.group(1)), match.group(2).strip()
         while headings and headings[-1][0] >= level:
             headings.pop()
@@ -136,5 +167,5 @@ def _heading_positions(text: str, line_starts: list[int]) -> list[tuple[int, tup
 
 
 def _heading_at(offset: int, positions: list[tuple[int, tuple[str, ...]]]) -> tuple[str, ...]:
-    matches = [path for start, path in positions if start <= offset]
-    return matches[-1] if matches else ()
+    index = bisect_right(positions, offset, key=lambda row: row[0])
+    return positions[index - 1][1] if index else ()
