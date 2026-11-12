@@ -44,6 +44,7 @@ _CANONICAL_SCORE_POLICIES = {
     "BM25 score descending, chunk ID ascending",
     "cosine descending, chunk ID ascending",
     "RRF score descending, chunk ID ascending",
+    "weighted RRF score descending, chunk ID ascending",
 }
 
 
@@ -571,6 +572,21 @@ def run_evaluation(
                         }
                         for window in window_chunks
                     ]
+                matched = getattr(hit, "matched_window", None)
+                if matched is not None:
+                    window = matched.window
+                    row["matched_subwindow"] = {
+                        "window_id": window.window_id,
+                        "source_ref": window.source,
+                        "document_id": window.document_id,
+                        "document_version_id": window.document_version_id,
+                        "chunk_id": window.chunk_id,
+                        "chunk_start_char": window.chunk_start_char,
+                        "chunk_end_char": window.chunk_end_char,
+                        "start_char": window.start_char,
+                        "end_char": window.end_char,
+                        "cosine_similarity": matched.cosine_similarity,
+                    }
                 provenance.append(row)
             if question["answerable"]:
                 metric = retrieval_metrics(ranked_ids, question["relevance"], k=k)

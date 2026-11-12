@@ -119,5 +119,91 @@ class WindowRetrievalTests(unittest.TestCase):
                 build_window_retriever(_chunks(),minimum_score=threshold)
 
 
+class FakeMultilingualEncoder:
+    model_id = "fake/multilingual-e5"
+    revision = "0123456789abcdef0123456789abcdef01234567"
+
+    def encode(self, texts, *, kind):
+        rows = []
+        for text in texts:
+            if kind == "query":
+                rows.append((0.0, 1.0) if "apple" in text else ((1.0, 0.0) if any("\u0600" <= c <= "\u06ff" for c in text) else (0.0, 1.0)))
+            else:
+                rows.append((0.0, 1.0) if "banana" in text or "English" in text else (1.0, 0.0))
+        return tuple(rows)
+
+
+class ActualWindowedE5Tests(unittest.TestCase):
+    def test_windows_are_bounded_overlapping_deterministic_and_offset_exact(self):
+        from experiments.rag_prototype.window_retrieval import split_text_windows
+        chunk = Chunk("source", "doc", "v2", "page-4", 100, 120, 1, 1, (), "abcdefghijklmnopqrst")
+        first = split_text_windows((chunk,), window_chars=10, overlap_chars=3)
+        second = split_text_windows((chunk,), window_chars=10, overlap_chars=3)
+        self.assertEqual(first, second)
+        self.assertEqual([(row.start_char, row.end_char, row.text) for row in first], [
+            (100, 110, "abcdefghij"), (107, 117, "hijklmnopq"), (114, 120, "opqrst")
+        ])
+        self.assertTrue(all(row.chunk_id == "page-4" and row.document_version_id == "v2" for row in first))
+
+    def test_arabic_and_english_queries_rank_semantic_windows_and_deduplicate_pages(self):
+        from experiments.rag_prototype.window_retrieval import build_windowed_e5_retrievers
+        chunks = (
+            Chunk("ar.pdf", "ar-doc", "v7", "ar-page", 40, 40 + len("معلومات عربية " * 8), 1, 1, (), "معلومات عربية " * 8),
+            Chunk("en.pdf", "en-doc", "v3", "en-page", 0, len("English evidence " * 8), 1, 1, (), "English evidence " * 8),
+        )
+        specs = build_windowed_e5_retrievers(chunks, FakeMultilingualEncoder(), window_chars=20, overlap_chars=5)
+        ar_hits = specs["windowed_e5"].retrieve("سؤال عربي", 2)
+        en_hits = specs["windowed_e5"].retrieve("English question", 2)
+        self.assertEqual(ar_hits[0].chunk.chunk_id, "ar-page")
+        self.assertEqual(en_hits[0].chunk.chunk_id, "en-page")
+        self.assertEqual(len({hit.chunk.chunk_id for hit in ar_hits}), len(ar_hits))
+        matched = ar_hits[0].matched_window
+        self.assertEqual(matched.window.document_version_id, "v7")
+        self.assertEqual(matched.window.source, "ar.pdf")
+        self.assertGreaterEqual(matched.window.start_char, matched.window.chunk_start_char)
+        self.assertLessEqual(matched.window.end_char, matched.window.chunk_end_char)
+
+    def test_weighted_rrf_changes_hybrid_order_and_reports_weights(self):
+        from experiments.rag_prototype.window_retrieval import build_windowed_e5_retrievers
+        chunks = (
+            Chunk("a", "a", "v1", "a", 0, 5, 1, 1, (), "apple"),
+            Chunk("b", "b", "v1", "b", 0, 6, 1, 1, (), "banana"),
+        )
+        encoder = FakeMultilingualEncoder()
+        dense_wins = build_windowed_e5_retrievers(chunks, encoder, window_chars=8, overlap_chars=2,
+                                                   dense_weight=0.9, rrf_constant=1)["windowed_hybrid"]
+        lexical_wins = build_windowed_e5_retrievers(chunks, encoder, window_chars=8, overlap_chars=2,
+                                                     dense_weight=0.1, rrf_constant=1)["windowed_hybrid"]
+        self.assertEqual(dense_wins.retrieve("apple", 2)[0].chunk.chunk_id, "b")
+        self.assertEqual(lexical_wins.retrieve("apple", 2)[0].chunk.chunk_id, "a")
+        self.assertEqual(dense_wins.metadata["dense_rrf_weight"], 0.9)
+        self.assertAlmostEqual(dense_wins.metadata["lexical_rrf_weight"], 0.1)
+
+    def test_zero_fusion_weight_does_not_inject_irrelevant_candidates(self):
+        from experiments.rag_prototype.window_retrieval import weighted_reciprocal_rank_fusion
+        ranked = weighted_reciprocal_rank_fusion([("dense-only",), ()], [1.0, 0.0], top_k=3)
+        self.assertEqual([row.item_id for row in ranked], ["dense-only"])
+        self.assertEqual(weighted_reciprocal_rank_fusion([("unused",), ()], [0.0, 1.0], top_k=3), ())
+
+    def test_windowed_provenance_survives_evaluation_reporting(self):
+        from pathlib import Path
+        from experiments.rag_prototype.window_retrieval import build_windowed_e5_retrievers
+        fixture = load_fixture(Path(__file__).parents[1] / "benchmarks" / "rag_eval_synthetic_dev_v2.json")
+        chunks = tuple(
+            Chunk(row["source"], row["document_id"], row["version_id"], row["chunk_id"],
+                  0, len(row["text"]), 1, 1, (), row["text"])
+            for row in fixture["chunks"]
+        )
+        spec = build_windowed_e5_retrievers(chunks, FakeMultilingualEncoder())["windowed_e5"]
+        result = run_evaluation(fixture, retrievers={"windowed": spec}, k=2)
+        ranked = next(iter(result["strategies"]["windowed"]["query_results"].values()))["ranked_chunks"]
+        item = ranked[0]
+        matched = item["matched_subwindow"]
+        self.assertEqual(matched["document_version_id"], item["document_version_id"])
+        self.assertEqual(matched["chunk_id"], item["chunk_id"])
+        self.assertGreaterEqual(matched["start_char"], matched["chunk_start_char"])
+        self.assertLessEqual(matched["end_char"], matched["chunk_end_char"])
+
+
 if __name__ == "__main__":
     unittest.main()
