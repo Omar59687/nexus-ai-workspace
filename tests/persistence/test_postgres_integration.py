@@ -99,6 +99,34 @@ def _assert_empty_database(connection) -> None:
         cursor.close()
 
 
+def _drop_test_schema(psycopg, params, schema: str) -> None:
+    """Drop one generated integration schema without touching other data."""
+    with psycopg.connect(**params) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _create_test_schema(psycopg, params) -> str:
+    """Create one fresh schema; clean it even if DDL setup fails partway."""
+    schema = "p4_it_" + os.urandom(8).hex()
+    try:
+        with psycopg.connect(**params) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f'CREATE SCHEMA "{schema}"')
+                cursor.execute(f'SET search_path TO "{schema}"')
+                for statement in POSTGRES_SCHEMA_DDL:
+                    cursor.execute(statement)
+    except BaseException as setup_error:
+        try:
+            _drop_test_schema(psycopg, params, schema)
+        except Exception as cleanup_error:
+            setup_error.add_note(
+                "test schema cleanup also failed: " + type(cleanup_error).__name__
+            )
+        raise
+    return schema
+
+
 def _indexed(
     *, workspace: str = "workspace-a", document_id: str = "doc-a", text: str,
 ) -> IndexedDocument:
@@ -222,35 +250,28 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
 
         cls._psycopg = psycopg
         cls._base_params = params
-        cls._schema = "p4_it_" + os.urandom(8).hex()
-        cls._schema_created = False
         # Prefix and loopback checks are not enough: a previously used test DB
         # may still contain application data. Inspect only PostgreSQL catalog
         # metadata before issuing any DDL, and reject pre-existing user objects.
         with psycopg.connect(**params) as connection:
             _assert_empty_database(connection)
-        with psycopg.connect(**params) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(f'CREATE SCHEMA "{cls._schema}"')
-                cls._schema_created = True
-                cursor.execute(f'SET search_path TO "{cls._schema}"')
-                for statement in POSTGRES_SCHEMA_DDL:
-                    cursor.execute(statement)
 
-    @classmethod
-    def tearDownClass(cls):
-        if not getattr(cls, "_schema_created", False):
-            return
-        with cls._psycopg.connect(**cls._base_params) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(f'DROP SCHEMA "{cls._schema}" CASCADE')
+    def setUp(self):
+        # Each test gets a private schema so records and database objects from
+        # one method cannot affect another, including under reordered runs.
+        self._schema = _create_test_schema(self._psycopg, self._base_params)
 
-    @classmethod
-    def repository(cls, *, limits: PostgresReadLimits | None = None) -> PostgresDocumentIndex:
-        params = dict(cls._base_params)
-        params["options"] = f"-csearch_path={cls._schema}"
+    def tearDown(self):
+        schema = getattr(self, "_schema", None)
+        if schema is not None:
+            self._schema = None
+            _drop_test_schema(self._psycopg, self._base_params, schema)
+
+    def repository(self, *, limits: PostgresReadLimits | None = None) -> PostgresDocumentIndex:
+        params = dict(self._base_params)
+        params["options"] = f"-csearch_path={self._schema}"
         return PostgresDocumentIndex(
-            lambda: cls._psycopg.connect(**params), read_limits=limits,
+            lambda: self._psycopg.connect(**params), read_limits=limits,
         )
 
     def test_restart_safe_idempotency_round_trip_and_workspace_isolation(self):
@@ -321,8 +342,8 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
             self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
         finally:
             # The trigger intentionally raises, but its DDL was committed in a
-            # separate connection. Always remove both objects from the
-            # class-scoped schema so later tests see an unmodified repository.
+            # separate connection. Always remove both objects and verify the
+            # test schema is clean before this method exits.
             with self._psycopg.connect(**connection_params) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(f'SET search_path TO "{self._schema}"')
@@ -423,6 +444,73 @@ class _FakeGuardConnection:
 
     def cursor(self):
         return self.result
+
+
+class _FakeSchemaCursor:
+    def __init__(self, database):
+        self.database = database
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, statement):
+        self.database.statements.append(statement)
+        if self.database.fail_on and self.database.fail_on in statement:
+            raise RuntimeError("injected schema setup failure")
+
+
+class _FakeSchemaConnection:
+    def __init__(self, database):
+        self.database = database
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return _FakeSchemaCursor(self.database)
+
+
+class _FakeSchemaDatabase:
+    def __init__(self):
+        self.statements = []
+        self.fail_on = None
+
+    def connect(self, **_params):
+        return _FakeSchemaConnection(self)
+
+
+class PerTestSchemaLifecycleTests(unittest.TestCase):
+
+    def test_schemas_are_unique_and_dropped_independently(self):
+        database = _FakeSchemaDatabase()
+        first = _create_test_schema(database, {})
+        second = _create_test_schema(database, {})
+        self.assertNotEqual(first, second)
+        self.assertRegex(first, r"^p4_it_[0-9a-f]{16}$")
+        self.assertRegex(second, r"^p4_it_[0-9a-f]{16}$")
+        self.assertIn(f'CREATE SCHEMA "{first}"', database.statements)
+        self.assertIn(f'CREATE SCHEMA "{second}"', database.statements)
+
+        _drop_test_schema(database, {}, first)
+        _drop_test_schema(database, {}, second)
+        self.assertIn(f'DROP SCHEMA IF EXISTS "{first}" CASCADE', database.statements)
+        self.assertIn(f'DROP SCHEMA IF EXISTS "{second}" CASCADE', database.statements)
+
+    def test_failed_schema_setup_attempts_cleanup_before_reraising(self):
+        database = _FakeSchemaDatabase()
+        database.fail_on = "CREATE TABLE nexus_rag_index_generations"
+        with self.assertRaisesRegex(RuntimeError, "injected schema setup failure"):
+            _create_test_schema(database, {})
+        create = next(statement for statement in database.statements
+                      if statement.startswith("CREATE SCHEMA"))
+        schema = create.split('"')[1]
+        self.assertIn(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE', database.statements)
 
 
 class DisposableDatabaseGuardTests(unittest.TestCase):
