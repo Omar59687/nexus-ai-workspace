@@ -31,10 +31,10 @@ def expand_page_context(
 ) -> RetrievalResponse:
     """Return top BM25 hits plus bounded adjacent *page-level* context.
 
-    A numerically dense adjacent page to one of the top five BM25 hits
-    anchors expansion. This function does not look at a gold answer,
-    target page, or target number. Context
-    candidates are source-version checked and always labelled as context.
+    The top five BM25 hits each contribute nearby source pages, in rank
+    order, up to the output limit. This function never consults a gold
+    answer, expected page, or target number. Context candidates retain
+    their source version and are explicitly labelled as context.
     """
     if type(radius) is not int or not 0 <= radius <= 2:
         raise ValueError("radius must be 0-2")
@@ -60,42 +60,51 @@ def expand_page_context(
             seen.add(identity)
             output.append(hit)
 
-    # Preserve best original scored evidence at rank 1. Select the context
-    # anchor from the first five BM25 hits by adjacent numeric-table density,
-    # not by a known answer amount, PDF page label or expected citation.
+    # Favor nearby pages from the highest BM25-ranked hits, rather than
+    # selecting only a single anchor by table density. A single high-density
+    # but irrelevant neighbor must not suppress the strongest lexical hit's
+    # financial-table pages. No gold amounts, target pages or company-specific
+    # rules are consulted.
     add(response.results[0])
-    anchors = []
-    for rank, hit in enumerate(response.results[:5]):
-        citation = hit.citation
-        if citation.page_number is None or citation.page_number <= 0:
+    inspected_sources = {}
+    processed_anchors = set()
+    for seed in response.results[:5]:
+        anchor = seed.citation
+        if anchor.page_number is None or anchor.page_number <= 0:
             continue
-        candidate = repository.get_active(workspace_id, citation.document_id)
-        if (candidate is None or candidate.document.version_id != citation.document_version_id
-                or candidate.document.content_sha256 != citation.source_sha256
-                or candidate.document.source_path != citation.source_path
-                or candidate.document.workspace_id != workspace_id):
-            raise MetadataIntegrityError("source changed during context selection")
-        available = {page.page_number: page.text for page in candidate.document.pages}
-        near = [
-            available[n]
-            for delta in range(1, radius + 1)
-            for n in (citation.page_number - delta, citation.page_number + delta)
-            if n in available
-        ]
-        density = sum(_numeric_density(text)[0] for text in near)
-        anchors.append((density, -rank, citation, candidate, available))
-    if anchors:
-        _, _, anchor, indexed, pages = max(anchors, key=lambda row: (row[0], row[1]))
-        candidates = []
+        source_key = (anchor.document_id, anchor.document_version_id,
+                      anchor.source_sha256, anchor.source_path)
+        if source_key not in inspected_sources:
+            indexed = repository.get_active(workspace_id, anchor.document_id)
+            if (indexed is None or indexed.document.workspace_id != workspace_id
+                    or indexed.document.document_id != anchor.document_id
+                    or indexed.document.version_id != anchor.document_version_id
+                    or indexed.document.content_sha256 != anchor.source_sha256
+                    or indexed.document.source_path != anchor.source_path):
+                raise MetadataIntegrityError("source changed during context selection")
+            inspected_sources[source_key] = (
+                indexed, {page.page_number: page.text for page in indexed.document.pages}
+            )
+        indexed, pages = inspected_sources[source_key]
+        anchor_key = (source_key, anchor.page_number)
+        if anchor_key in processed_anchors:
+            continue
+        processed_anchors.add(anchor_key)
+
         for delta in range(1, radius + 1):
+            # Both sides of each anchor, with the most numerically dense
+            # source-valid chunk chosen independently for each page.
             for page_no in (anchor.page_number - delta, anchor.page_number + delta):
                 if page_no not in pages:
                     continue
                 adjacent = [c for c in indexed.chunks if c.page_number == page_no]
                 if not adjacent:
                     continue
-                # One source-validated, most tabular chunk from each neighbor.
-                winner = max(adjacent, key=lambda c: (_numeric_density(c.text), -c.start_char if c.start_char is not None else 0))
+                winner = max(
+                    adjacent,
+                    key=lambda c: (_numeric_density(c.text),
+                                   -c.start_char if c.start_char is not None else 0),
+                )
                 if (winner.document_id != anchor.document_id
                         or winner.version_id != anchor.document_version_id
                         or winner.source_path != anchor.source_path
@@ -123,16 +132,18 @@ def expand_page_context(
                     offsets_reliable=winner.offsets_reliable,
                     exact_text=winner.text,
                 )
-                candidates.append(RetrievedEvidence(
+                add(RetrievedEvidence(
                     score=0.0, score_type="context", strategy="adjacent_page_context",
                     citation=citation,
                 ))
-        for hit in candidates:
-            add(hit)
-        # Fail closed if an active generation was swapped during expansion.
-        after = repository.get_active(workspace_id, anchor.document_id)
-        if (after is None or after.document.version_id != anchor.document_version_id
-                or after.document.content_sha256 != anchor.source_sha256):
+
+    # Recheck every source generation after expanding all top-ranked matches.
+    for (document_id, version_id, source_hash, source_path) in inspected_sources:
+        after = repository.get_active(workspace_id, document_id)
+        if (after is None or after.document.workspace_id != workspace_id
+                or after.document.version_id != version_id
+                or after.document.content_sha256 != source_hash
+                or after.document.source_path != source_path):
             raise MetadataIntegrityError("source changed after context expansion")
 
     for hit in response.results[1:]:
