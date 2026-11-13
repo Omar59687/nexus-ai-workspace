@@ -48,6 +48,24 @@ def _safe_reason_code(exc: Exception) -> str:
             return "chunk_limit_exceeded"
         if message == "PDF extraction requires an isolated parser worker":
             return "pdf_worker_isolation_unavailable"
+        if message == "page exceeds max_lines_per_page":
+            return "page_line_count_limit_exceeded"
+        if message == "page exceeds max_markdown_headings_per_page":
+            return "page_heading_count_limit_exceeded"
+        if message == "in-memory index exceeds max_vector_coordinates":
+            return "repository_vector_coordinate_budget_exceeded"
+        if message == "in-memory index exceeds max_windows":
+            return "repository_window_limit_exceeded"
+        if message == "in-memory index exceeds max_chunks":
+            return "repository_chunk_limit_exceeded"
+        if message == "document exceeds max_chunks":
+            return "chunk_limit_exceeded"
+        if message == "window vector dimensions do not match index metadata":
+            return "window_vector_dimension_mismatch"
+        if message == "chunk source offsets do not validate against extracted text":
+            return "source_chunk_offset_mismatch"
+        if message == "window source offsets do not validate against its chunk":
+            return "source_window_offset_mismatch"
         return "value_error_unclassified"
     return "runtime_error_unclassified"
 
