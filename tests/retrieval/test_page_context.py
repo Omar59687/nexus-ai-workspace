@@ -137,7 +137,7 @@ class PageContextTests(unittest.TestCase):
             original.document, version_id="replaced"
         )) if hasattr(original, "__dataclass_fields__") else SimpleNamespace(
             document=SimpleNamespace(
-                workspace_id="authorized", version_id="replaced",
+                workspace_id="authorized", document_id="document", version_id="replaced",
                 content_sha256="sha256", source_path="report.pdf",
                 pages=original.document.pages,
             ),
