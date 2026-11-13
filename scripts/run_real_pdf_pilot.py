@@ -23,6 +23,8 @@ def validate_pdf_path(value: str) -> Path:
         raise ValueError("provide an absolute path to one .pdf file")
     if path.is_symlink():
         raise ValueError("symlink PDF paths are not supported by this pilot")
+    if not path.is_file():
+        raise ValueError("PDF path must be an existing file")
     resolved = path.resolve(strict=True)
     if not resolved.is_file():
         raise ValueError("PDF path must be an existing file")
