@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from nexus_ai.benchmark.mobily_real_acceptance import (
-    _amount_present, _metric_present, assess_evidence, write_report,
+    _amount_present, _amount_formats, _metric_present, assess_evidence, write_report,
 )
 from nexus_ai.documents.types import ExtractedPage, SourceChunk
 
@@ -40,8 +40,31 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
     def test_exact_amount_accepts_comma_and_arabic_digits(self):
         for sample in ("19,642", "19642", "١٩٬٦٤٢", "۱۹٬۶۴۲"):
             self.assertTrue(_amount_present(sample))
-        for sample in ("19.6", "18,206", "119,642", "19,6427"):
+        for sample in ("19.6", "18,206", "119,642", "19,6427", "19,641,7059"):
             self.assertFalse(_amount_present(sample))
+
+    def test_precise_unrounded_audited_revenue_is_detected(self):
+        for amount in ("19,641,705", "19641705", "١٩٬٦٤١٬٧٠٥", "19 641 705"):
+            self.assertIn("precise_thousands", _amount_formats(amount))
+        self.assertNotIn("rounded_millions", _amount_formats("19,641,705"))
+
+    def test_mismatched_metric_is_reported_separately_from_amount(self):
+        indexed = SimpleNamespace(
+            document=SimpleNamespace(pages=(
+                ExtractedPage(114, "19,641,705 year 2025"),
+                ExtractedPage(115, "Revenue in Saudi riyals thousands"),
+            )),
+            chunks=(
+                _row("19,641,705 year 2025", 114, "number"),
+                _row("Revenue in Saudi riyals thousands", 115, "label"),
+            ),
+        )
+        result = assess_evidence(
+            indexed, (_retrieval(114, "number"), _retrieval(115, "label"))
+        )
+        self.assertEqual(result["candidate_pages"], [])
+        self.assertEqual(result["amount_pages"], [114])
+        self.assertEqual(result["signal_status"], "AMOUNT_FOUND_NO_REVENUE_LABEL_ON_SAME_PAGE")
 
     def test_revenue_metric_in_arabic_without_hamza(self):
         self.assertTrue(_metric_present("المبيعات/الايرادات"))
