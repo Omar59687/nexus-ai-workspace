@@ -73,8 +73,8 @@ def extract_collection(
             )
             rows.append(row)
             continue
-        seen_digests[digest] = path
-
+        # Only successful extraction can establish a reusable duplicate.
+        # A failed first copy must not suppress a second attempted extraction.
         try:
             extractor = extractor_for_path(
                 path, pdf_max_pages=max_pdf_pages,
@@ -88,6 +88,7 @@ def extract_collection(
             nonblank = sum(bool(page.text.strip()) for page in extracted.pages)
             if not nonblank:
                 raise ValueError("no extractable text")
+            seen_digests[digest] = path
             row.update(
                 status="extracted",
                 sha256=digest,
