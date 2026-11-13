@@ -52,3 +52,43 @@ indexes after applying synthetic updates; it does not measure PostgreSQL
 transactions, incremental indexing, PDF parsing, E5 model latency, process RSS,
 or production throughput. Those checks require the target deployment
 environment and actual reviewed documents. Do not tune on a protected holdout.
+
+## Interpretation of no-answer false positives
+
+The two BM25 baselines are *rankers*, not calibrated evidence-relevance or
+abstention classifiers. They return top-k chunks even when a synthetic query's
+identifier is absent from every document. Thus the reported
+`no_answer_false_positives=10` for each strategy means 10 unanswerable questions
+had non-empty top-k results. It does **not** prove the answering service would
+hallucinate. Nor does `answerable_hit@k=1.0` prove real multilingual retrieval:
+the fixture deliberately shares exact ASCII item identifiers between languages.
+
+Do not retrofit a score cutoff to this benchmark and declare the problem fixed:
+a threshold needs independent development calibration and holdout validation.
+For actual PDFs, separately review whether retrieved pages support the answer,
+and verify that the generator abstains on unsupported questions.
+
+## Real single-PDF pilot (separate from the synthetic workload)
+
+The new `scripts/run_real_pdf_pilot.py` opt-in runner processes exactly one
+explicitly selected, trusted local text-layer PDF into an in-memory index. It
+uses the existing Windows bounded PDF parser, cached E5 and loopback-only Ollama.
+It neither crawls directories nor modifies PostgreSQL. The owner should put the
+selected PDF outside Git and use the cached E5 virtual environment, with the
+repository root, src, and existing main virtualenv dependencies on PYTHONPATH.
+For example, using their own local paths:
+
+```powershell
+$env:OLLAMA_MODEL = 'gemma3:4b'
+$env:PYTHONPATH = "$PWD;$PWD\src;C:\AI Projects\Nexus AI\.venv\Lib\site-packages"
+$env:HF_HOME = Join-Path $env:LOCALAPPDATA 'NexusAI\huggingface'
+$env:HF_HUB_OFFLINE = '1'
+$env:TRANSFORMERS_OFFLINE = '1'
+& (Join-Path $env:LOCALAPPDATA 'NexusAI\rag-e5-venv\Scripts\python.exe') scripts/run_real_pdf_pilot.py --run-live --pdf 'C:\private\trusted-report.pdf' --question 'What was revenue in 2025?' --report (Join-Path $env:LOCALAPPDATA 'NexusAI\reports\real-pdf-pilot.json')
+```
+
+The output includes source hash, extraction counts, page references, answer and
+citation metadata, but makes no claim of financial correctness. Review amounts,
+year, reporting units, comparative columns, and source pages manually. Scanned
+PDFs may fail because OCR is not provided; tables may flatten incorrectly.
+A Windows Job Object is **not** a hostile-PDF filesystem/network sandbox.
