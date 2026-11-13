@@ -54,6 +54,7 @@ jobs:
             tests/retrieval/test_financial_chunk_forensics.py \
             tests/retrieval/test_phase4_closure.py \
             tests/retrieval/test_mobily_real_acceptance.py \
+            tests/retrieval/test_page_context.py \
             tests/test_financial_evidence_evaluation.py
       - name: Live disposable PostgreSQL acceptance (never accept skips)
         run: |
