@@ -122,12 +122,15 @@ _NUMERIC = re.compile(r"^-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$")
 def _amount(value: object) -> Decimal:
     if isinstance(value, bool) or value is None:
         raise AnalyticsInputError("missing or invalid numeric amount")
-    # Never accept binary float: it has already discarded decimal exactness.
+    # XLSX decimal cells are decoded by openpyxl into Python floats. Convert
+    # their shortest round-trip decimal spelling; never sum binary floats.
+    # The original spreadsheet's displayed number format is not an accounting
+    # precision guarantee, so this conversion policy is disclosed in results.
     if isinstance(value, float):
         if not math.isfinite(value):
             raise AnalyticsInputError("non-finite numeric amount")
-        raise AnalyticsInputError("floating-point XLSX cells require explicit text values for exact accounting")
-    if isinstance(value, int):
+        text = str(value)
+    elif isinstance(value, int):
         text = str(value)
     elif isinstance(value, str):
         text = value.strip()
@@ -216,6 +219,11 @@ def analyze_table(
         "chart_type": "bar",
         "chart_data": chart,
         "value_encoding": "decimal_string",
+        "numeric_policy": (
+            "CSV decimal text preserved; XLSX numeric cells use shortest "
+            "round-trip decimal representation of parsed stored values; "
+            "spreadsheet number formats are not applied"
+        ),
         "limits": {
             "max_file_bytes": limits.max_file_bytes,
             "max_rows": limits.max_rows,
