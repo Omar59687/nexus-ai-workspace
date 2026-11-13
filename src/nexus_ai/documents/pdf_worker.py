@@ -124,6 +124,11 @@ class IsolatedPdfExtractor:
                 "raise SystemExit(_worker(sys.argv[1:]))\n"
             )
             command = [self.python_executable, "-c", bootstrap, *worker_args]
+        elif self._uses_builtin_worker:
+            # Module execution avoids placing the package's ``documents``
+            # directory first on sys.path, where its ``types.py`` could shadow
+            # Python's standard-library ``types`` during worker startup.
+            command = [self.python_executable, "-m", "nexus_ai.documents.pdf_worker", *worker_args]
         else:
             command = [self.python_executable, str(self.worker_script), *worker_args]
         output = _run_bounded_process(
@@ -359,6 +364,15 @@ def _worker(argv: list[str]) -> int:
         total_chars = 0
         for number, page in enumerate(reader.pages, start=1):
             text = page.extract_text()
+            # pypdf's default layout inference may omit most of a right-to-left
+            # run when a PDF uses a Type 0 font with a ToUnicode map. Only pay
+            # for layout extraction when the default result already contains
+            # RTL characters, and use it when it demonstrably preserves more
+            # text. The ordinary path stays unchanged for other documents.
+            if isinstance(text, str) and _contains_rtl(text):
+                layout_text = page.extract_text(extraction_mode="layout")
+                if isinstance(layout_text, str) and len(layout_text.strip()) > len(text.strip()):
+                    text = layout_text
             if text is None:
                 text = ""
             if not isinstance(text, str):
@@ -387,6 +401,10 @@ def _worker(argv: list[str]) -> int:
 def _write_result(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     sys.stdout.flush()
+
+
+def _contains_rtl(text: str) -> bool:
+    return any("\u0590" <= char <= "\u08ff" for char in text)
 
 
 if __name__ == "__main__":
