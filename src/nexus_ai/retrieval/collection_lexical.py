@@ -59,7 +59,12 @@ class CollectionLexicalRetriever:
         snapshot, selected = self.catalog.resolve(
             self.repository, workspace_id=self.workspace_id, query_filter=query_filter,
         )
-        query_terms = set(tokenize(query))
+        # Apply the same Arabic orthographic normalization to query and source
+        # tokens. A small explicit finance alias bridge improves EN->AR
+        # retrieval without relying on a model or rewriting source evidence.
+        query_terms = set(tokenize(query, normalize_arabic=True))
+        if query_terms & {"revenue", "revenues", "ايرادات", "الايرادات"}:
+            query_terms.update(("revenue", "revenues", "ايرادات", "الايرادات"))
         if not query_terms or not selected:
             return self._empty_if_unchanged(snapshot.revision_id, selected)
 
@@ -86,7 +91,7 @@ class CollectionLexicalRetriever:
                     or pages[chunk.page_number][chunk.start_char:chunk.end_char] != chunk.text
                 ):
                     raise MetadataIntegrityError("source offsets do not match indexed chunk")
-                tokens = tokenize(chunk.text)
+                tokens = tokenize(chunk.text, normalize_arabic=True)
                 total_tokens += len(tokens)
                 chunks.append((chunk, tokens))
                 if len(chunks) > self.limits.max_chunks or total_tokens > self.limits.max_tokens:
