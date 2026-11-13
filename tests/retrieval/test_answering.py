@@ -130,6 +130,20 @@ class GroundedAnswerTests(unittest.TestCase):
             self.service(adapter).answer("Question", (evidence(),), language="en")
         self.assertEqual(raised.exception.reason_code, "answer_without_citations")
 
+    def test_generated_answer_must_not_echo_internal_citation_ids(self):
+        source = evidence(text="Northstar revenue was 42 million dollars.")
+        evidence_id = self.valid_id(source)
+        for generated_answer in (evidence_id, f"Answer: {evidence_id}"):
+            with self.subTest(answer=generated_answer):
+                adapter = FakeAdapter(AnswerModelOutput(
+                    answer=generated_answer,
+                    citation_ids=[evidence_id],
+                    abstain=False,
+                ))
+                with self.assertRaises(AnswerOutputRejectedError) as raised:
+                    self.service(adapter).answer("What was revenue?", (source,), language="en")
+                self.assertEqual(raised.exception.reason_code, "citation_id_leaked_into_answer")
+
     def test_unsupported_numeric_claim_is_rejected_and_localized_digits_are_normalized(self):
         source = evidence(text="Revenue was 42.")
         forged = FakeAdapter(AnswerModelOutput(
