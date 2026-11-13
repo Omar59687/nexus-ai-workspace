@@ -7,6 +7,7 @@ document to already be active with a matching path, company, and financial year.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from itertools import islice
 
 from nexus_ai.documents.collection_preflight import _manifest_entries
 from nexus_ai.documents.service import stable_document_id
@@ -32,16 +33,17 @@ def register_indexed_manifest(
     company ID or exact explicit alias. Never guess identity from filenames.
     """
     checked = _manifest_entries({"documents": entries})
-    # Creating this temporary snapshot allows the existing catalog's alias
-    # validation logic to reject collisions before any live registration.
-    # Instead, resolve company names locally with exact normalized comparisons.
+    # Materialize each bounded alias collection once; reuse it for catalog
+    # validation so single-pass iterators cannot silently disappear.
     lookup: dict[str, str] = {}
+    normalized_companies: dict[str, tuple[str, ...]] = {}
     for company_id, names in companies.items():
         if isinstance(names, (str, bytes)):
             raise ValueError("company aliases must be explicit sequences")
-        values = tuple(names)
+        values = tuple(islice(names, 21))
         if len(values) > 20:
             raise ValueError("too many aliases")
+        normalized_companies[company_id] = values
         for name in (company_id, *values):
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("invalid company name")
@@ -91,6 +93,6 @@ def register_indexed_manifest(
     return catalog.replace_collection(
         workspace_id=workspace_id,
         collection_id=collection_id,
-        companies=companies,
+        companies=normalized_companies,
         documents=rows,
     )
