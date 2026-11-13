@@ -96,6 +96,12 @@ def expand_page_context(
                     continue
                 # One source-validated, most tabular chunk from each neighbor.
                 winner = max(adjacent, key=lambda c: (_numeric_density(c.text), -c.start_char if c.start_char is not None else 0))
+                if (winner.document_id != anchor.document_id
+                        or winner.version_id != anchor.document_version_id
+                        or winner.source_path != anchor.source_path
+                        or winner.source_sha256 != anchor.source_sha256
+                        or winner.page_number != page_no):
+                    raise MetadataIntegrityError("adjacent chunk provenance mismatch")
                 if winner.offsets_reliable and (
                     winner.start_char is None or winner.end_char is None
                     or pages[page_no][winner.start_char:winner.end_char] != winner.text
