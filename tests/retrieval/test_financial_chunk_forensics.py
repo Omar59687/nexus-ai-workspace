@@ -60,15 +60,15 @@ class FinancialChunkForensicsTests(unittest.TestCase):
 
     def test_arabic_alef_tatweel_and_vowel_marks_are_matching_variants(self):
         result = self._inspect(
-            "إِيرَادَات المجموعة\\n"
-            "مبلغ 19.6 مليار\\n"
-            "السنة 2025\\n",
+            "إِيرَادَات المجموعة\n"
+            "مبلغ 19.6 مليار\n"
+            "السنة 2025\n",
             ["إيرادات", "19.6", "2025"],
         )
         self.assertTrue(result["all_anchors_present_on_page"])
         self.assertTrue(result["all_anchors_share_chunk"])
         variants = self._inspect(
-            "ايرادات المجموعة\\nمبلغ 19.6 مليار\\nالسنة 2025\\n",
+            "ايرادات المجموعة\nمبلغ 19.6 مليار\nالسنة 2025\n",
             ["إيرادات", "19.6", "2025"],
         )
         self.assertTrue(variants["all_anchors_present_on_page"])
