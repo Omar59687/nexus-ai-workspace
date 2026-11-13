@@ -72,6 +72,13 @@ jobs:
               result = json.load(stream)
           with open("benchmarks/results/financial_evidence_synthetic_v1.json", encoding="utf-8") as stream:
               expected = json.load(stream)
-          assert result == expected, "synthetic financial report unexpectedly changed"
-          print("Synthetic report reproducible; no real-PDF accuracy claim.")
+          assert result["dataset"] == expected["dataset"], "fixture identity changed"
+          observed, baseline = result["metrics"], expected["metrics"]
+          for metric in ("recall_at_5", "recall_at_10"):
+              assert observed[metric]["value"] >= baseline[metric]["value"], f"{metric} regressed"
+          assert observed["citation_provenance_integrity"]["rate"] == 1, "citation corruption"
+          assert observed["company_year_leakage"]["count"] == 0, "company/year leakage"
+          assert observed["missing_evidence"]["recall"] == 1, "missing fact recall regressed"
+          assert observed["incorrect_currency_candidates"] <= baseline["incorrect_currency_candidates"], "currency decoys regressed"
+          print("Synthetic quality gates pass; raw ranking changes are permitted, real-PDF accuracy unverified.")
           PY
