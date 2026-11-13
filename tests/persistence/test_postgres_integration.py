@@ -12,6 +12,7 @@ import os
 import re
 import threading
 import unittest
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 
 from nexus_ai.documents.types import (
@@ -129,6 +130,7 @@ def _create_test_schema(psycopg, params) -> str:
 
 def _indexed(
     *, workspace: str = "workspace-a", document_id: str = "doc-a", text: str,
+    source_path: str | None = None,
 ) -> IndexedDocument:
     source_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     chunker_fingerprint = hashlib.sha256(b"integration-test-chunker-v1").hexdigest()
@@ -159,7 +161,7 @@ def _indexed(
         document_id=document_id,
         version_id=version_id,
         processing_id=processing_id,
-        source_path=f"docs/{document_id}.txt",
+        source_path=source_path or f"docs/{document_id}.txt",
         content_sha256=source_hash,
         media_type="text/plain",
         extractor_name="utf8-text",
@@ -290,6 +292,82 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         self.assertEqual([row.document.workspace_id for row in restarted.list_active("workspace-a")], ["workspace-a"])
         self.assertEqual([row.document.workspace_id for row in restarted.list_active("workspace-b")], ["workspace-b"])
 
+    def test_replayed_generation_with_different_vector_payload_is_rejected(self):
+        repository = self.repository()
+        original = _indexed(text="same source and generation configuration")
+        self.assertTrue(repository.activate(original))
+        changed = replace(
+            original,
+            windows=(replace(original.windows[0], vector=(0.5, 0.25)),),
+        )
+        with self.assertRaisesRegex(ValueError, "different immutable payload"):
+            self.repository().activate(changed)
+        self.assertEqual(self.repository().get_active("workspace-a", "doc-a"), original)
+
+    def test_source_version_cannot_be_reused_with_different_extracted_provenance(self):
+        repository = self.repository()
+        original = _indexed(text="source version provenance is immutable")
+        repository.activate(original)
+        changed_document = replace(original.document, warnings=("different extraction warning",))
+        revision = "c" * 40
+        generation = stable_index_generation_id(
+            document_id=changed_document.document_id,
+            source_version_id=changed_document.version_id,
+            processing_id=changed_document.processing_id,
+            embedding_model_id=original.embedding_model_id,
+            embedding_revision=revision,
+            embedding_dimensions=original.embedding_dimensions,
+            chunker_fingerprint=changed_document.chunker_version,
+            window_chars=original.window_chars,
+            window_overlap_chars=original.window_overlap_chars,
+            preprocessing_id=original.preprocessing_id,
+        )
+        changed = replace(
+            original, document=changed_document, embedding_revision=revision,
+            index_generation_id=generation,
+        )
+        with self.assertRaisesRegex(ValueError, "different immutable provenance"):
+            repository.activate(changed)
+        self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
+
+    def test_first_activation_race_serializes_complete_active_generations(self):
+        barrier = threading.Barrier(2)
+        candidates = [_indexed(text=f"first writer payload {number}") for number in range(2)]
+
+        def activate(candidate):
+            barrier.wait(timeout=10)
+            return self.repository().activate(candidate)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [future.result(timeout=30) for future in
+                       (pool.submit(activate, candidate) for candidate in candidates)]
+        self.assertEqual(results, [True, True])
+        active = self.repository().get_active("workspace-a", "doc-a")
+        candidate_texts = {row.document.pages[0].text for row in candidates}
+        self.assertIn(active.document.pages[0].text, candidate_texts)
+        self.assertEqual(active.chunks[0].text, active.document.pages[0].text)
+        self.assertEqual(active.windows[0].text, active.chunks[0].text)
+
+    def test_document_identity_cannot_be_rebound_to_another_source_path(self):
+        repository = self.repository()
+        original = _indexed(text="identity remains tied to its source")
+        repository.activate(original)
+        rebound = _indexed(text="different content", source_path="docs/elsewhere.txt")
+        with self.assertRaisesRegex(ValueError, "different source path"):
+            repository.activate(rebound)
+        self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
+
+    def test_distinct_document_ids_cannot_claim_the_same_source_path(self):
+        repository = self.repository()
+        original = _indexed(text="canonical source")
+        repository.activate(original)
+        duplicate_path = _indexed(
+            document_id="doc-b", text="different identity", source_path=original.document.source_path,
+        )
+        with self.assertRaises(self._psycopg.errors.UniqueViolation):
+            repository.activate(duplicate_path)
+        self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
+
     def test_replacement_returns_only_active_version_and_delete_cascades(self):
         repository = self.repository()
         original = _indexed(text="old source value")
@@ -391,6 +469,23 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         self.assertEqual([row.document.document_id for row in repository.list_active(
             "workspace-a", filters=RetrievalFilters(document_id="two"),
         )], ["two"])
+
+    def test_database_rejects_empty_and_multidimensional_window_vectors(self):
+        repository = self.repository()
+        repository.activate(_indexed(text="vector integrity fixture"))
+        params = dict(self._base_params)
+        params["options"] = f"-csearch_path={self._schema}"
+        for invalid_expression in ("ARRAY[]::double precision[]", "ARRAY[[1.0, 2.0]]::double precision[]"):
+            with self.subTest(vector=invalid_expression):
+                with self.assertRaises(self._psycopg.errors.CheckViolation):
+                    with self._psycopg.connect(**params) as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute(
+                                "UPDATE nexus_rag_windows SET vector = " + invalid_expression +
+                                " WHERE workspace_id = %s AND document_id = %s",
+                                ("workspace-a", "doc-a"),
+                            )
+        self.assertEqual(repository.get_active("workspace-a", "doc-a").windows[0].vector, (1.0, 0.25))
 
     def test_concurrent_replacements_and_readers_observe_complete_generations(self):
         repository = self.repository()

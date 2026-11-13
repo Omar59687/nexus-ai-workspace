@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from nexus_ai.documents.types import (
     DocumentVersion,
@@ -23,7 +24,7 @@ from nexus_ai.retrieval.postgres_repository import (
 )
 
 
-def _indexed_document() -> IndexedDocument:
+def _indexed_document(*, source_path="reports/report.txt") -> IndexedDocument:
     text = "Evidence is 42."
     document_id = "document-a"
     source_hash = "a" * 64
@@ -44,7 +45,7 @@ def _indexed_document() -> IndexedDocument:
     )
     document = DocumentVersion(
         workspace_id="workspace-a", document_id=document_id, version_id=version_id,
-        processing_id=processing_id, source_path="reports/report.txt", content_sha256=source_hash,
+        processing_id=processing_id, source_path=source_path, content_sha256=source_hash,
         media_type="text/plain", extractor_name="utf8-text", extractor_version="1",
         chunker_version=chunker_version, pages=(ExtractedPage(None, text),),
         warnings=(), offsets_reliable=True,
@@ -84,8 +85,35 @@ class FakeCursor:
         self.connection.calls.append((normalized, tuple(params)))
         if self.connection.fail_on and self.connection.fail_on in normalized:
             raise RuntimeError("injected database failure")
-        if normalized.startswith("SELECT active_version_id"):
+        self.rowcount = 1
+        if normalized.startswith("INSERT INTO nexus_rag_documents"):
+            if self.connection.source_path is None:
+                self.connection.source_path = params[2]
+        elif normalized.startswith("SELECT source_path, active_version_id"):
+            self._one = ((self.connection.source_path, *self.connection.active)
+                         if self.connection.source_path is not None and self.connection.active is not None
+                         else (self.connection.source_path, None, None, None)
+                         if self.connection.source_path is not None else None)
+        elif normalized.startswith("SELECT active_version_id"):
             self._one = self.connection.active
+        elif normalized.startswith("SELECT payload_sha256"):
+            self._one = ((self.connection.generation_payload_sha256,)
+                         if self.connection.generation_payload_sha256 is not None else None)
+        elif normalized.startswith("SELECT source_payload_sha256"):
+            self._one = ((self.connection.source_payload_sha256,)
+                         if self.connection.source_payload_sha256 is not None else None)
+        elif normalized.startswith("INSERT INTO nexus_rag_document_versions"):
+            if self.connection.source_payload_sha256 is None:
+                self.connection.source_payload_sha256 = params[10]
+                self.rowcount = 1
+            else:
+                self.rowcount = 0
+        elif normalized.startswith("INSERT INTO nexus_rag_index_generations"):
+            if self.connection.generation_payload_sha256 is None:
+                self.connection.generation_payload_sha256 = params[-1]
+                self.rowcount = 1
+            else:
+                self.rowcount = 0
         elif normalized.startswith("SELECT COUNT(*)"):
             self._one = self.connection.read_totals
         elif normalized.startswith("SELECT d.source_path"):
@@ -98,7 +126,6 @@ class FakeCursor:
             self._all = self.connection.active_rows
         elif normalized.startswith("UPDATE nexus_rag_documents"):
             self.connection.active = (params[1], params[2], params[3])
-        self.rowcount = 1
 
     def executemany(self, sql, rows):
         normalized = " ".join(sql.split())
@@ -127,8 +154,14 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self, *, active=None, fail_on=None, read_totals=(0, 0, 0, 0, 0, 0, 0)):
+    def __init__(self, *, active=None, source_path=None, source_payload_sha256=None,
+                 generation_payload_sha256=None,
+                 autocommit=False, fail_on=None, read_totals=(0, 0, 0, 0, 0, 0, 0)):
         self.active = active
+        self.source_path = source_path
+        self.source_payload_sha256 = source_payload_sha256
+        self.generation_payload_sha256 = generation_payload_sha256
+        self.autocommit = autocommit
         self.fail_on = fail_on
         self.calls = []
         self.read_totals = read_totals
@@ -160,6 +193,11 @@ class PostgresRepositoryTests(unittest.TestCase):
         self.assertIn("PRIMARY KEY (workspace_id, document_id)", ddl)
         self.assertIn("FOREIGN KEY (workspace_id, document_id, version_id, processing_id, generation_id)", ddl)
         self.assertIn("vector double precision[] NOT NULL", ddl)
+        self.assertIn("UNIQUE (workspace_id, source_path)", ddl)
+        self.assertIn("UNIQUE (workspace_id, document_id, source_path)", ddl)
+        self.assertIn("array_ndims(vector) = 1 AND cardinality(vector) BETWEEN 1 AND 4096", ddl)
+        self.assertIn("payload_sha256 char(64) NOT NULL", ddl)
+        self.assertIn("source_payload_sha256 char(64) NOT NULL", ddl)
         self.assertNotIn("CREATE EXTENSION", ddl)
         self.assertNotIn("vector(", ddl)
 
@@ -175,22 +213,93 @@ class PostgresRepositoryTests(unittest.TestCase):
         self.assertEqual(connection.rollbacks, 0)
         self.assertTrue(connection.closed)
         sql = [statement for statement, _ in connection.calls]
+        parent_insert = next(i for i, statement in enumerate(sql) if statement.startswith("INSERT INTO nexus_rag_documents"))
+        row_lock = next(i for i, statement in enumerate(sql) if statement.startswith("SELECT source_path, active_version_id"))
         gen_write = next(i for i, statement in enumerate(sql) if statement.startswith("INSERT INTO nexus_rag_index_generations"))
         chunk_write = next(i for i, statement in enumerate(sql) if statement.startswith("INSERT INTO nexus_rag_chunks"))
         window_write = next(i for i, statement in enumerate(sql) if statement.startswith("INSERT INTO nexus_rag_windows"))
         pointer_update = next(i for i, statement in enumerate(sql) if statement.startswith("UPDATE nexus_rag_documents"))
+        self.assertLess(parent_insert, row_lock)
+        self.assertLess(row_lock, gen_write)
         self.assertLess(gen_write, chunk_write)
         self.assertLess(chunk_write, window_write)
         self.assertLess(window_write, pointer_update)
         generation_params = connection.calls[gen_write][1]
         self.assertEqual(generation_params[4], indexed.index_generation_id)
-        self.assertEqual(generation_params[-3:], (indexed.window_chars, indexed.window_overlap_chars,
-                                                  indexed.preprocessing_id))
+        self.assertEqual(generation_params[-4:-1], (indexed.window_chars, indexed.window_overlap_chars,
+                                                    indexed.preprocessing_id))
 
-        second = FakeConnection(active=connection.active)
+        second = FakeConnection(
+            active=connection.active, source_path=indexed.document.source_path,
+            generation_payload_sha256=connection.generation_payload_sha256,
+        )
         self.assertFalse(PostgresDocumentIndex(lambda: second).activate(indexed))
-        self.assertEqual(len(second.calls), 1)
+        self.assertEqual(len(second.calls), 3)
         self.assertEqual(second.commits, 1)
+
+    def test_same_generation_identity_with_different_window_payload_is_rejected(self):
+        original = _indexed_document()
+        connection = FakeConnection()
+        repository = PostgresDocumentIndex(lambda: connection)
+        self.assertTrue(repository.activate(original))
+        changed = replace(
+            original,
+            windows=(replace(original.windows[0], vector=(0.5, 0.25)),),
+        )
+        retry = FakeConnection(
+            active=connection.active, source_path=original.document.source_path,
+            generation_payload_sha256=connection.generation_payload_sha256,
+        )
+        with self.assertRaisesRegex(ValueError, "different immutable payload"):
+            PostgresDocumentIndex(lambda: retry).activate(changed)
+        self.assertEqual(retry.rollbacks, 1)
+
+    def test_source_version_identity_cannot_hide_changed_extracted_provenance(self):
+        original = _indexed_document()
+        first = FakeConnection()
+        self.assertTrue(PostgresDocumentIndex(lambda: first).activate(original))
+        changed_document = replace(original.document, warnings=("different warning",))
+        revision = "c" * 40
+        generation = stable_index_generation_id(
+            document_id=changed_document.document_id,
+            source_version_id=changed_document.version_id,
+            processing_id=changed_document.processing_id,
+            embedding_model_id=original.embedding_model_id,
+            embedding_revision=revision,
+            embedding_dimensions=original.embedding_dimensions,
+            chunker_fingerprint=changed_document.chunker_version,
+            window_chars=original.window_chars,
+            window_overlap_chars=original.window_overlap_chars,
+            preprocessing_id=original.preprocessing_id,
+        )
+        changed = replace(
+            original, document=changed_document, embedding_revision=revision,
+            index_generation_id=generation,
+        )
+        retry = FakeConnection(
+            active=first.active, source_path=changed_document.source_path,
+            source_payload_sha256=first.source_payload_sha256,
+            generation_payload_sha256=first.generation_payload_sha256,
+        )
+        with self.assertRaisesRegex(ValueError, "different immutable provenance"):
+            PostgresDocumentIndex(lambda: retry).activate(changed)
+        self.assertEqual(retry.rollbacks, 1)
+
+    def test_document_id_cannot_be_rebound_to_a_different_source_path(self):
+        connection = FakeConnection(source_path="reports/report.txt")
+        repository = PostgresDocumentIndex(lambda: connection)
+        with self.assertRaisesRegex(ValueError, "different source path"):
+            repository.activate(_indexed_document(source_path="reports/other.txt"))
+        self.assertFalse(any(sql.startswith("UPDATE nexus_rag_documents") for sql, _ in connection.calls))
+        self.assertEqual(connection.rollbacks, 1)
+
+    def test_autocommit_connection_is_rejected_before_repository_statements(self):
+        connection = FakeConnection(autocommit=True)
+        with self.assertRaisesRegex(ValueError, "autocommit-disabled"):
+            PostgresDocumentIndex(lambda: connection).activate(_indexed_document())
+        self.assertEqual(connection.calls, [])
+        self.assertEqual(connection.rollbacks, 1)
+        self.assertTrue(connection.closed)
 
     def test_index_write_failure_rolls_back_and_never_activates_partial_generation(self):
         connection = FakeConnection(fail_on="INSERT INTO nexus_rag_windows")

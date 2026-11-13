@@ -20,6 +20,10 @@ No embeddings, model calls, company/year retrieval filtering, vector storage, or
 
 - Re-ingesting the same path, source bytes, extractor identity, and chunker fingerprint produces the same version and processing identities. The repository compares a canonical payload digest and treats an exact match as unchanged; a same-identity/different-payload attempt fails closed.
 - A changed source, extractor, or chunker generation is prepared first. PostgreSQL inserts version metadata and all chunks, switches the active pointer, and prunes the previous generation in one transaction. A failed transaction leaves the prior active generation intact.
+- The PostgreSQL candidate binds one relative source path to one workspace/document identity with unique and composite foreign-key constraints. Activation first creates the identity row, then locks it, so first-time concurrent writes are serialized as well as replacements. A document ID cannot be rebound to a different path.
+- Each generation stores a SHA-256 digest of its canonical source, chunk, window, and vector payload. Replaying the same generation identity with different payload bytes fails closed instead of silently reusing stale windows. Window vectors are constrained to one-dimensional, non-empty arrays of at most 4096 values.
+- Each source-version row also stores a digest of the extracted document record. A retry cannot silently associate different extracted pages or warnings with an already-used source-version/processing identity, even if it requests a new embedding generation.
+- The adapter rejects DB-API connections that expose `autocommit=True`; transaction rollback guarantees depend on a fresh connection with autocommit disabled.
 - Each manifest item is handled in an independent repository transaction. An extraction or persistence failure produces a generic per-item failure result; processing continues for later entries. Failure telemetry stores only workspace, relative source path, and exception class, never exception messages or source text.
 - The candidate PostgreSQL schema and adapter are separate from the application task database. `COLLECTION_SCHEMA_DDL` is inert documentation/code data and is never run by import or repository construction. No Alembic migration was added or applied, and no production database was contacted.
 - Deletion removes the active document and dependent text/chunks. The candidate currently retains only the active source/processing generation; it is not an archival document-version store.
@@ -46,8 +50,8 @@ The new DB tests use fake DB-API connections. They verify parameter binding, tha
 
 ## Remaining deployment requirements
 
-1. Independently review the DDL and convert it into an explicit reversible Alembic migration only after owner approval.
-2. Apply and test that migration in a newly created disposable PostgreSQL database; verify FK behavior, advisory-lock concurrency, transaction rollback, JSONB serialization, count limits, and deletion cascades against the supported PostgreSQL version.
+1. Independently review the DDL and convert it into an explicit reversible Alembic migration before any deployment. No migration is appropriate yet because this schema remains a proposal and no database is approved for applying it.
+2. Apply and test that migration in a newly created disposable PostgreSQL database; verify FK behavior, row-lock and concurrent-first-insert behavior, transaction rollback, JSONB serialization, count limits, and deletion cascades against the supported PostgreSQL version.
 3. Define backup, retention, privacy, encryption, storage quotas, and deletion/restore policy for extracted text. The adapter stores full extracted source text and chunks.
 4. Define trusted workspace authorization before any route or CLI exposes persistence. The `workspace_id` is only a scope key, not authentication.
 5. Verify Windows and POSIX input behavior, including PDF worker limits, on the actual supported environments.

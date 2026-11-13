@@ -7,10 +7,11 @@ does not require psycopg or open a database connection.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Callable, Iterator, Sequence
 
 from nexus_ai.documents.types import (
@@ -38,10 +39,12 @@ POSTGRES_SCHEMA_DDL: tuple[str, ...] = (
         source_path text NOT NULL,
         active_version_id text,
         active_processing_id char(64),
-        active_generation_id text,
+        active_generation_id char(64),
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, document_id),
+        UNIQUE (workspace_id, source_path),
+        UNIQUE (workspace_id, document_id, source_path),
         CHECK (length(workspace_id) BETWEEN 1 AND 128),
         CHECK ((active_version_id IS NULL) = (active_processing_id IS NULL)),
         CHECK ((active_version_id IS NULL) = (active_generation_id IS NULL))
@@ -57,14 +60,16 @@ POSTGRES_SCHEMA_DDL: tuple[str, ...] = (
         extractor_version text NOT NULL,
         chunker_version text NOT NULL,
         processing_id char(64) NOT NULL,
+        source_payload_sha256 char(64) NOT NULL,
         pages_json jsonb NOT NULL,
         warnings_json jsonb NOT NULL,
         offsets_reliable boolean NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, document_id, version_id, processing_id),
-        FOREIGN KEY (workspace_id, document_id)
-            REFERENCES nexus_rag_documents(workspace_id, document_id) ON DELETE CASCADE,
-        CHECK (source_sha256 ~ '^[0-9a-f]{64}$')
+        FOREIGN KEY (workspace_id, document_id, source_path)
+            REFERENCES nexus_rag_documents(workspace_id, document_id, source_path) ON DELETE CASCADE,
+        CHECK (source_sha256 ~ '^[0-9a-f]{64}$'),
+        CHECK (source_payload_sha256 ~ '^[0-9a-f]{64}$')
     )""",
     """CREATE TABLE nexus_rag_index_generations (
         workspace_id text NOT NULL,
@@ -78,12 +83,14 @@ POSTGRES_SCHEMA_DDL: tuple[str, ...] = (
         window_chars integer NOT NULL CHECK (window_chars BETWEEN 1 AND 4096),
         window_overlap_chars integer NOT NULL CHECK (window_overlap_chars >= 0 AND window_overlap_chars < window_chars),
         preprocessing_id text NOT NULL,
+        payload_sha256 char(64) NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, document_id, version_id, processing_id, generation_id),
         FOREIGN KEY (workspace_id, document_id, version_id, processing_id)
             REFERENCES nexus_rag_document_versions(workspace_id, document_id, version_id, processing_id)
             ON DELETE CASCADE,
-        CHECK (generation_id ~ '^[0-9a-f]{64}$')
+        CHECK (generation_id ~ '^[0-9a-f]{64}$'),
+        CHECK (payload_sha256 ~ '^[0-9a-f]{64}$')
     )""",
     """ALTER TABLE nexus_rag_documents
         ADD CONSTRAINT nexus_rag_active_generation_fk
@@ -136,7 +143,7 @@ POSTGRES_SCHEMA_DDL: tuple[str, ...] = (
         FOREIGN KEY (workspace_id, document_id, version_id, processing_id, generation_id, chunk_id)
             REFERENCES nexus_rag_chunks
             (workspace_id, document_id, version_id, processing_id, generation_id, chunk_id) ON DELETE CASCADE,
-        CHECK (array_length(vector, 1) BETWEEN 1 AND 4096),
+        CHECK (array_ndims(vector) = 1 AND cardinality(vector) BETWEEN 1 AND 4096),
         CHECK ((start_char IS NULL) = (end_char IS NULL)),
         CHECK (start_char IS NULL OR (start_char >= 0 AND end_char >= start_char))
     )""",
@@ -185,22 +192,14 @@ class PostgresDocumentIndex(DocumentIndexRepository):
     def activate(self, indexed: IndexedDocument) -> bool:
         _validate_indexed_document(indexed)
         generation_id = _generation_id(indexed)
+        payload_sha256 = _indexed_payload_sha256(indexed)
         document = indexed.document
         with self._transaction() as connection:
             cursor = connection.cursor()
             try:
-                cursor.execute(
-                    """SELECT active_version_id, active_processing_id, active_generation_id
-                       FROM nexus_rag_documents
-                       WHERE workspace_id = %s AND document_id = %s
-                       FOR UPDATE""",
-                    (document.workspace_id, document.document_id),
-                )
-                current = cursor.fetchone()
-                if (current and current[0] == document.version_id
-                        and current[1] == document.processing_id and current[2] == generation_id):
-                    return False
-
+                # Materialize the parent before locking it. SELECT ... FOR
+                # UPDATE alone does not lock a missing row, so concurrent first
+                # activations otherwise have no document-level serialization.
                 cursor.execute(
                     """INSERT INTO nexus_rag_documents
                        (workspace_id, document_id, source_path)
@@ -209,37 +208,72 @@ class PostgresDocumentIndex(DocumentIndexRepository):
                     (document.workspace_id, document.document_id, document.source_path),
                 )
                 cursor.execute(
+                    """SELECT source_path, active_version_id, active_processing_id, active_generation_id
+                       FROM nexus_rag_documents WHERE workspace_id = %s AND document_id = %s
+                       FOR UPDATE""",
+                    (document.workspace_id, document.document_id),
+                )
+                current = cursor.fetchone()
+                if current is None:
+                    raise RuntimeError("document identity row disappeared during activation")
+                if current[0] != document.source_path:
+                    raise ValueError("document ID is already bound to a different source path")
+                if (current[1] == document.version_id and current[2] == document.processing_id
+                        and current[3] == generation_id):
+                    stored_payload = self._generation_payload_sha256(
+                        cursor, document.workspace_id, document.document_id,
+                        document.version_id, document.processing_id, generation_id,
+                    )
+                    if stored_payload != payload_sha256:
+                        raise ValueError("active index generation ID has a different immutable payload")
+                    return False
+                cursor.execute(
                     """INSERT INTO nexus_rag_document_versions
                        (workspace_id, document_id, version_id, source_path, source_sha256,
                         media_type, extractor_name, extractor_version, chunker_version, processing_id,
-                        pages_json, warnings_json, offsets_reliable)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+                        source_payload_sha256, pages_json, warnings_json, offsets_reliable)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
                        ON CONFLICT (workspace_id, document_id, version_id, processing_id) DO NOTHING""",
                     (
                         document.workspace_id, document.document_id, document.version_id,
                         document.source_path, document.content_sha256, document.media_type,
                         document.extractor_name, document.extractor_version,
                         document.chunker_version, document.processing_id,
+                        _document_payload_sha256(document),
                         _json([asdict(page) for page in document.pages]),
                         _json(document.warnings), document.offsets_reliable,
                     ),
                 )
+                if cursor.rowcount != 1:
+                    stored_source_payload = self._source_payload_sha256(
+                        cursor, document.workspace_id, document.document_id,
+                        document.version_id, document.processing_id,
+                    )
+                    if stored_source_payload != _document_payload_sha256(document):
+                        raise ValueError("source version identity has different immutable provenance")
                 cursor.execute(
                     """INSERT INTO nexus_rag_index_generations
                        (workspace_id, document_id, version_id, processing_id, generation_id,
                         embedding_model_id, embedding_revision, embedding_dimensions,
-                        window_chars, window_overlap_chars, preprocessing_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        window_chars, window_overlap_chars, preprocessing_id, payload_sha256)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (workspace_id, document_id, version_id, processing_id, generation_id) DO NOTHING""",
                     (
                         document.workspace_id, document.document_id, document.version_id,
                         document.processing_id, generation_id,
                         indexed.embedding_model_id, indexed.embedding_revision,
                         indexed.embedding_dimensions, indexed.window_chars,
-                        indexed.window_overlap_chars, indexed.preprocessing_id,
+                        indexed.window_overlap_chars, indexed.preprocessing_id, payload_sha256,
                     ),
                 )
                 generation_created = cursor.rowcount == 1
+                if not generation_created:
+                    stored_payload = self._generation_payload_sha256(
+                        cursor, document.workspace_id, document.document_id,
+                        document.version_id, document.processing_id, generation_id,
+                    )
+                    if stored_payload != payload_sha256:
+                        raise ValueError("index generation ID has a different immutable payload")
                 if generation_created:
                     _execute_batches(
                         cursor,
@@ -293,6 +327,37 @@ class PostgresDocumentIndex(DocumentIndexRepository):
             finally:
                 cursor.close()
         return True
+
+    @staticmethod
+    def _source_payload_sha256(
+        cursor: Any, workspace_id: str, document_id: str, version_id: str, processing_id: str,
+    ) -> str:
+        cursor.execute(
+            """SELECT source_payload_sha256 FROM nexus_rag_document_versions
+               WHERE workspace_id = %s AND document_id = %s AND version_id = %s
+                 AND processing_id = %s""",
+            (workspace_id, document_id, version_id, processing_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("source version conflict row is missing")
+        return row[0].strip() if isinstance(row[0], str) else str(row[0])
+
+    @staticmethod
+    def _generation_payload_sha256(
+        cursor: Any, workspace_id: str, document_id: str, version_id: str,
+        processing_id: str, generation_id: str,
+    ) -> str:
+        cursor.execute(
+            """SELECT payload_sha256 FROM nexus_rag_index_generations
+               WHERE workspace_id = %s AND document_id = %s AND version_id = %s
+                 AND processing_id = %s AND generation_id = %s""",
+            (workspace_id, document_id, version_id, processing_id, generation_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("index generation conflict row is missing")
+        return row[0].strip() if isinstance(row[0], str) else str(row[0])
 
     def get_active(self, workspace_id: str, document_id: str) -> IndexedDocument | None:
         _validate_workspace_id(workspace_id)
@@ -582,6 +647,8 @@ class PostgresDocumentIndex(DocumentIndexRepository):
     def _transaction(self) -> Iterator[Any]:
         connection = self._connection_factory()
         try:
+            if getattr(connection, "autocommit", False):
+                raise ValueError("PostgreSQL repository requires autocommit-disabled connections")
             yield connection
             connection.commit()
         except BaseException:
@@ -604,6 +671,33 @@ def _generation_id(indexed: IndexedDocument) -> str:
     if not isinstance(explicit, str) or not re.fullmatch(r"[0-9a-f]{64}", explicit):
         raise ValueError("index_generation_id must be a lowercase SHA-256 hex digest")
     return explicit
+
+
+def _indexed_payload_sha256(indexed: IndexedDocument) -> str:
+    """Hash the complete immutable source/chunk/window payload for generation reuse."""
+    return _canonical_payload_sha256(indexed)
+
+
+def _document_payload_sha256(document: DocumentVersion) -> str:
+    """Bind immutable extracted pages and source provenance to a source version."""
+    return _canonical_payload_sha256(document)
+
+
+def _canonical_payload_sha256(value: Any) -> str:
+    """Stream canonical JSON into SHA-256 without copying the whole index graph."""
+    def encode_dataclass(instance: Any) -> dict[str, Any]:
+        if not is_dataclass(instance) or isinstance(instance, type):
+            raise TypeError(f"unsupported canonical payload type: {type(instance).__name__}")
+        return {field.name: getattr(instance, field.name) for field in fields(instance)}
+
+    encoder = json.JSONEncoder(
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        default=encode_dataclass,
+    )
+    digest = hashlib.sha256()
+    for token in encoder.iterencode(value):
+        digest.update(token.encode("utf-8"))
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True)
