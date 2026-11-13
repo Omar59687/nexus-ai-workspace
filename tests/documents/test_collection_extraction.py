@@ -81,6 +81,30 @@ class CollectionExtractionTests(unittest.TestCase):
         self.assertEqual(results["duplicate_count"], 1)
         self.assertEqual(results["documents"][1]["duplicate_of"], "one.txt")
 
+    def test_duplicate_bytes_with_conflicting_company_or_year_fail_closed(self):
+        (self.root / "first.pdf").write_bytes(b"%PDF same bytes")
+        (self.root / "second.pdf").write_bytes(b"%PDF same bytes")
+        class Safe:
+            isolation_enforced = True
+            def extract(self, content, *, source_path):
+                return ExtractionResult(
+                    "test-worker", "1", "application/pdf",
+                    (ExtractedPage(1, "Revenue 42 million"),), (), True,
+                )
+        with patch("nexus_ai.documents.collection_extraction.extractor_for_path",
+                   return_value=Safe()):
+            results = extract_collection(self.root, [
+                item("first.pdf", company="Mobily", year=2025),
+                item("second.pdf", company="Aramco", year=2024),
+            ])
+        self.assertEqual(results["status"], "PARTIAL")
+        self.assertEqual(results["extracted_count"], 1)
+        self.assertEqual(results["blocked_count"], 1)
+        self.assertEqual(results["duplicate_count"], 0)
+        self.assertEqual(
+            results["documents"][1]["reason"], "duplicate_content_metadata_conflict"
+        )
+
     def test_failed_first_copy_never_deduplicates_another_failed_copy(self):
         (self.root / "first.txt").write_bytes(b"\xff")
         (self.root / "second.txt").write_bytes(b"\xff")
