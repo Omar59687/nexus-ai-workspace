@@ -231,12 +231,14 @@ def run_bounded_process(
             raise _win_error("SetHandleInformation(stdin)")
         if not kernel32.SetHandleInformation(parent_stdout, _HANDLE_FLAG_INHERIT, 0):
             raise _win_error("SetHandleInformation(stdout)")
-        null_handle = kernel32.CreateFileW(
+        created_null_handle = kernel32.CreateFileW(
             "NUL", _GENERIC_WRITE, _FILE_SHARE_READ | _FILE_SHARE_WRITE,
             ctypes.byref(security), _OPEN_EXISTING, _FILE_ATTRIBUTE_NORMAL, None,
         )
-        if not null_handle or _handle_value(null_handle) == ctypes.c_void_p(-1).value:
+        null_value = _handle_value(created_null_handle) if created_null_handle else 0
+        if not null_value or null_value == ctypes.c_void_p(-1).value:
             raise _win_error("CreateFileW(NUL)")
+        null_handle = wintypes.HANDLE(null_value)
 
         attribute_size = ctypes.c_size_t()
         kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(attribute_size))
@@ -290,7 +292,8 @@ def run_bounded_process(
 
         if not kernel32.AssignProcessToJobObject(job, process_info.hProcess):
             raise _win_error("AssignProcessToJobObject")
-        if kernel32.ResumeThread(process_info.hThread) == 0xFFFFFFFF:
+        resume_count = kernel32.ResumeThread(process_info.hThread)
+        if resume_count in (0, 0xFFFFFFFF):
             raise _win_error("ResumeThread")
         kernel32.CloseHandle(process_info.hThread)
         process_info.hThread = 0
