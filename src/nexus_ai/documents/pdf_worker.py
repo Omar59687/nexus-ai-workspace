@@ -364,15 +364,17 @@ def _worker(argv: list[str]) -> int:
         total_chars = 0
         for number, page in enumerate(reader.pages, start=1):
             text = page.extract_text()
-            # pypdf's default layout inference may omit most of a right-to-left
-            # run when a PDF uses a Type 0 font with a ToUnicode map. Only pay
-            # for layout extraction when the default result already contains
-            # RTL characters, and use it when it demonstrably preserves more
-            # text. The ordinary path stays unchanged for other documents.
+            # pypdf's default extraction can return the same number of Arabic
+            # characters in a different, incorrect order. For pages where the
+            # default result contains RTL script, prefer pypdf's layout mode
+            # when it also yields RTL text. This uses a documented extractor
+            # mode, not a length heuristic or text rewrite. Emit a warning when
+            # the selected extraction differs so the fallback is observable.
             if isinstance(text, str) and _contains_rtl(text):
                 layout_text = page.extract_text(extraction_mode="layout")
-                if isinstance(layout_text, str) and len(layout_text.strip()) > len(text.strip()):
+                if isinstance(layout_text, str) and _contains_rtl(layout_text) and layout_text != text:
                     text = layout_text
+                    warnings.append(f"page {number} used layout extraction for right-to-left text")
             if text is None:
                 text = ""
             if not isinstance(text, str):
@@ -399,7 +401,10 @@ def _worker(argv: list[str]) -> int:
 
 
 def _write_result(payload: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    # Worker stdout may be a pipe whose Windows encoding is not UTF-8. Escaping
+    # non-ASCII characters keeps the IPC payload ASCII-safe; json.loads in the
+    # parent restores the original Unicode text without lossy conversion.
+    sys.stdout.write(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
     sys.stdout.flush()
 
 

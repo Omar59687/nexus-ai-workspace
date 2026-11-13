@@ -401,7 +401,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(serialized + "\n", encoding="utf-8")
-    print(serialized)
+    # PowerShell/Windows stdout may use a legacy code page. Keep console JSON
+    # ASCII-only while the UTF-8 report file retains readable Arabic text.
+    print(json.dumps(report, ensure_ascii=True, indent=2))
     return 0 if report.get("execution_status") == "PASS" else 1
 
 

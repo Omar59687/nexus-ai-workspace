@@ -29,6 +29,8 @@ evidence text, model answer text, answer citations, safe error categories, and
 whether expected source documents appeared in retrieval results. Each citation
 is checked against the temporary extracted pages, source version, document
 identity, chunk ID, and exact offsets before it is reported as valid.
+Console JSON escapes non-ASCII characters for Windows code-page safety; the
+optional report file is UTF-8 and retains readable Arabic.
 
 ## Reading the results
 
@@ -59,7 +61,8 @@ the existing configured Windows worker controls. It does not add OCR; scanned
 PDFs without a text layer remain unsupported.
 
 The PDFs have a Unicode ToUnicode text layer but use a minimal synthetic font
-map. The PDF worker uses pypdf's layout extraction only as a fallback when the
-default extraction contains right-to-left characters but returns fewer
-characters than layout mode. This narrow fallback preserves the normal
-extraction path for other documents.
+map. When default extraction contains right-to-left characters, the worker
+prefers pypdf layout extraction if it also contains right-to-left text. If the
+chosen output differs, the worker records a page warning. This avoids treating
+equal-length but differently ordered strings as equivalent. Worker IPC JSON is
+ASCII-safe; the parent JSON decoder restores the original Unicode content.

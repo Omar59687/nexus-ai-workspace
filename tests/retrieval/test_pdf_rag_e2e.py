@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
+from nexus_ai.documents.pdf_worker import IsolatedPdfExtractor, PdfWorkerExtractionError
 from nexus_ai.retrieval.answering import AnswerModelOutput, AnswerOutputRejectedError, GroundedAnswerService
 from nexus_ai.documents.service import DocumentIngestionService
 from nexus_ai.retrieval.service import RetrievalConfig, RetrievalService
@@ -19,6 +24,7 @@ from scripts.run_pdf_rag_e2e import (
     WORKSPACE_ID,
     _citation_maps_to_extracted_pdf,
     _run_case,
+    generated_text_pdf,
     ingest_fixture_pdfs,
     main,
     write_pdf_fixtures,
@@ -155,6 +161,97 @@ class PdfRagE2EContractTests(unittest.TestCase):
             self.assertEqual(main([]), 2)
         self.assertIn("explicit_live_opt_in_required", errors.getvalue())
 
+    def test_arabic_worker_output_round_trips_under_ascii_stdout_encoding(self):
+        arabic = PDF_FIXTURES[1].pages[0]
+        with patch.dict(os.environ, {"PYTHONIOENCODING": "ascii"}):
+            extracted = IsolatedPdfExtractor(
+                memory_limit_bytes=512 * 1024 * 1024,
+                timeout_seconds=30,
+            ).extract(generated_text_pdf((arabic,)), source_path="arabic-fixture.pdf")
+        self.assertEqual(extracted.pages[0].text, arabic)
+        self.assertTrue(any("layout extraction" in warning for warning in extracted.warnings))
+
+    def test_worker_rejects_corrupt_encrypted_and_over_limit_pdfs(self):
+        extractor = IsolatedPdfExtractor()
+        with self.assertRaises(PdfWorkerExtractionError) as corrupt:
+            extractor.extract(b"not a PDF", source_path="corrupt-generated.pdf")
+        self.assertEqual(corrupt.exception.reason_code, "corrupt")
+
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.encrypt("generated-test-password")
+        encrypted = io.BytesIO()
+        writer.write(encrypted)
+        with self.assertRaises(PdfWorkerExtractionError) as encrypted_error:
+            extractor.extract(encrypted.getvalue(), source_path="encrypted-generated.pdf")
+        self.assertEqual(encrypted_error.exception.reason_code, "encrypted")
+
+        with self.assertRaises(PdfWorkerExtractionError) as pages:
+            IsolatedPdfExtractor(max_pages=1).extract(
+                generated_text_pdf(("page one", "page two")), source_path="two-page-generated.pdf"
+            )
+        self.assertEqual(pages.exception.reason_code, "page_limit")
+        with self.assertRaises(PdfWorkerExtractionError) as page_chars:
+            IsolatedPdfExtractor(max_page_chars=8).extract(
+                generated_text_pdf(("extracted content exceeds this page cap",)),
+                source_path="large-page-generated.pdf",
+            )
+        self.assertEqual(page_chars.exception.reason_code, "page_char_limit")
+        with self.assertRaises(PdfWorkerExtractionError) as total_chars:
+            IsolatedPdfExtractor(max_page_chars=8, max_total_chars=10).extract(
+                generated_text_pdf(("12345678", "abcdefgh")),
+                source_path="large-total-generated.pdf",
+            )
+        self.assertEqual(total_chars.exception.reason_code, "total_char_limit")
+        with self.assertRaises(ValueError):
+            IsolatedPdfExtractor(max_input_bytes=8).extract(
+                generated_text_pdf(("too large",)), source_path="oversize-generated.pdf"
+            )
+
+    def test_concurrent_generated_pdf_workers_keep_source_text_isolated(self):
+        payloads = tuple(
+            (fixture.source_path, generated_text_pdf(fixture.pages), fixture.pages)
+            for fixture in PDF_FIXTURES
+        )
+
+        def extract(item):
+            source_path, content, _expected = item
+            result = IsolatedPdfExtractor().extract(content, source_path=source_path)
+            return source_path, tuple(page.text for page in result.pages)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = tuple(pool.map(extract, payloads))
+        self.assertEqual(results, tuple((path, expected) for path, _content, expected in payloads))
+
+    def test_blocked_live_run_writes_safe_json_and_ascii_safe_console_output(self):
+        with tempfile.TemporaryDirectory(prefix="nexus-pdf-report-test-") as directory:
+            report_path = Path(directory) / "blocked.json"
+            stdout = _AsciiOnlyWriter()
+            with patch("scripts.run_pdf_rag_e2e.run_live_pdf_rag", side_effect=RuntimeError("private detail")):
+                with redirect_stdout(stdout):
+                    self.assertEqual(main(["--run-live", "--report", str(report_path)]), 1)
+            console_report = json.loads(stdout.getvalue())
+            file_report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(console_report["execution_status"], "BLOCKED")
+            self.assertEqual(file_report["error_category"], "live_pipeline_blocked")
+            self.assertNotIn("private detail", report_path.read_text(encoding="utf-8"))
+
+            arabic_report_path = Path(directory) / "arabic.json"
+            arabic_stdout = _AsciiOnlyWriter()
+            with patch("scripts.run_pdf_rag_e2e.run_live_pdf_rag", return_value={
+                "execution_status": "BLOCKED",
+                "case_question": "كم بلغت الإيرادات؟",
+            }):
+                with redirect_stdout(arabic_stdout):
+                    self.assertEqual(main(["--run-live", "--report", str(arabic_report_path)]), 1)
+            parsed_console = json.loads(arabic_stdout.getvalue())
+            parsed_file = json.loads(arabic_report_path.read_text(encoding="utf-8"))
+            self.assertEqual(parsed_console["case_question"], "كم بلغت الإيرادات؟")
+            self.assertEqual(parsed_file["case_question"], "كم بلغت الإيرادات؟")
+            self.assertTrue(arabic_stdout.getvalue().isascii())
+
     def test_empty_evidence_abstains_without_generation_and_no_answer_control_is_empty(self):
         adapter = FakeAnswerAdapter()
         answerer = _answerer(adapter)
@@ -182,6 +279,12 @@ class PdfRagE2EContractTests(unittest.TestCase):
 
 def _answerer(adapter):
     return GroundedAnswerService(adapter=adapter, default_model="fixture-model")
+
+
+class _AsciiOnlyWriter(StringIO):
+    def write(self, value):
+        value.encode("ascii")
+        return super().write(value)
 
 
 def _fixture_limits():
