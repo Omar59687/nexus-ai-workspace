@@ -48,6 +48,22 @@ requires evidence from two PDFs, and an empty-evidence control. Supported
 numeric answer validation and fabricated citation rejection are covered by
 deterministic fake-adapter tests; these tests do not load E5 or call Ollama.
 
+## Answer coverage (separate from execution PASS)
+
+The diagnostic now reports `fixture_answer_coverage`: number of answerable
+synthetic cases, number answered with source-validated citations, unnecessary
+abstentions, and a coverage fraction. Each case has `fixture_answerability`
+and `answer_coverage_status`. An answerable case that safely abstains can
+**still pass pipeline execution** while recording `UNNECESSARY_ABSTENTION`.
+The deliberately empty no-answer case records `EXPECTED_ABSTENTION` and
+is excluded from the answerable coverage denominator.
+
+Coverage is **not** a score of factual correctness or semantic entailment.
+Even a cited answer can be factually wrong; independent reviewed judgments
+and adversarial tests are still required before calling output accurate. A
+high-quality score must never be inferred from top-level `execution_status`.
+Existing fail-closed citation and unsupported-number checks are unchanged.
+
 ## Local test commands
 
 ```powershell
