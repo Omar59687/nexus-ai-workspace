@@ -94,7 +94,7 @@ class CollectionLexicalRetriever:
                 doc_frequencies.update(set(tokens) & query_terms)
 
         if not chunks or total_tokens == 0:
-            return self._empty_if_unchanged(snapshot.revision_id)
+            return self._empty_if_unchanged(snapshot.revision_id, selected)
         avg_len = total_tokens / len(chunks)
         idf = {
             term: math.log1p((len(chunks) - n + 0.5) / (n + 0.5))
