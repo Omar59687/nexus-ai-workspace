@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.run_real_pdf_pilot import main, validate_pdf_path, run_pilot
+from scripts.run_real_pdf_pilot import main, validate_pdf_path, run_pilot, PilotStageError
 
 
 class RealPdfPilotTests(unittest.TestCase):
@@ -33,6 +33,32 @@ class RealPdfPilotTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             main(["--pdf", "x.pdf", "--question", "Q"])
         self.assertEqual(raised.exception.code, 2)
+
+    def test_safe_stage_error_classification_does_not_expose_pdf_text(self):
+        limited = PilotStageError(
+            "ingestion", ValueError("index exceeds max_vector_coordinates before embedding")
+        )
+        self.assertEqual(limited.stage, "ingestion")
+        self.assertEqual(limited.reason_code, "vector_coordinate_budget_exceeded")
+        private = PilotStageError("ingestion", ValueError("confidential PDF revenue value: 123"))
+        self.assertEqual(private.reason_code, "value_error_unclassified")
+        self.assertNotIn("confidential", str(private))
+
+    def test_stage_and_reason_are_in_blocked_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pdf = root / "trusted.pdf"
+            pdf.write_bytes(b"%PDF-1.4\\n")
+            with patch("scripts.run_real_pdf_pilot.run_pilot",
+                       side_effect=PilotStageError(
+                           "ingestion", ValueError("index exceeds max_windows before embedding"))):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    status = main(["--run-live", "--pdf", str(pdf), "--question", "Revenue?"])
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(status, 1)
+            self.assertEqual(result["failed_stage"], "ingestion")
+            self.assertEqual(result["reason_code"], "text_window_limit_exceeded")
 
     def test_model_failure_emits_safe_blocked_report(self):
         with tempfile.TemporaryDirectory() as directory:
