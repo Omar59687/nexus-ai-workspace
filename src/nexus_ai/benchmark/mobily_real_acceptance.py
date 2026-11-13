@@ -36,8 +36,8 @@ QUERIES = (
 )
 # Official announcement rounds to millions, but audited statements report
 # the unrounded amount in SAR thousands. Do not treat 19.6 billion as exact.
-_AMOUNT_MILLIONS = re.compile(r"(?<![0-9])19[\\s,٬]?642(?![0-9])")
-_AMOUNT_THOUSANDS = re.compile(r"(?<![0-9])19[\\s,٬]?641[\\s,٬]?705(?![0-9])")
+_AMOUNT_MILLIONS = re.compile(r"(?<![0-9])19[\s,٬]?642(?![0-9])")
+_AMOUNT_THOUSANDS = re.compile(r"(?<![0-9])19[\s,٬]?641[\s,٬]?705(?![0-9])")
 _REVENUE = ("ايرادات", "الايرادات", "revenue", "revenues", "المبيعات")
 _WORKSPACE = "p4-single-owner-mobily-fy2025"
 _COLLECTION = "mobily-2025-official-benchmark"
