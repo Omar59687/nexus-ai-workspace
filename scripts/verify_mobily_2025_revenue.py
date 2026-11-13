@@ -36,12 +36,17 @@ def main(argv: list[str] | None = None) -> int:
         "amount_pages": evaluation.get("amount_pages"),
         "amount_formats": evaluation.get("amount_formats"),
         "signal_status": evaluation.get("signal_status"),
+        "gold_evidence_status": evaluation.get("gold_evidence_status"),
+        "verified_gold_retrieval_status": evaluation.get("verified_gold_retrieval_status"),
+        "verified_gold_page_amount_extracted": evaluation.get("verified_gold_page_amount_extracted"),
         "technical_status": evaluation.get("technical_status"),
         "financial_truth_status": evaluation.get("financial_truth_status"),
         "queries": [
             {"language": row["language"], "top_5_pages": row["top_5_pages"],
              "candidate_at_5": row["relevant_candidate_page_at_5"],
-             "candidate_at_10": row["relevant_candidate_page_at_10"]}
+             "candidate_at_10": row["relevant_candidate_page_at_10"],
+             "verified_gold_page_at_5": row["verified_gold_page_at_5"],
+             "verified_gold_page_at_10": row["verified_gold_page_at_10"]}
             for row in evaluation.get("languages", [])
         ],
     }, ensure_ascii=True))
