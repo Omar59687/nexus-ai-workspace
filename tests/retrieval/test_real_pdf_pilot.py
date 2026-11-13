@@ -44,6 +44,23 @@ class RealPdfPilotTests(unittest.TestCase):
         self.assertEqual(private.reason_code, "value_error_unclassified")
         self.assertNotIn("confidential", str(private))
 
+    def test_known_real_pdf_ingestion_limits_are_classified_safely(self):
+        cases = {
+            "page exceeds max_lines_per_page": "page_line_count_limit_exceeded",
+            "page exceeds max_markdown_headings_per_page": "page_heading_count_limit_exceeded",
+            "in-memory index exceeds max_vector_coordinates":
+                "repository_vector_coordinate_budget_exceeded",
+            "in-memory index exceeds max_windows": "repository_window_limit_exceeded",
+            "document exceeds max_chunks": "chunk_limit_exceeded",
+            "chunk source offsets do not validate against extracted text":
+                "source_chunk_offset_mismatch",
+        }
+        for message, expected in cases.items():
+            with self.subTest(message=message):
+                error = PilotStageError("ingestion", ValueError(message))
+                self.assertEqual(error.reason_code, expected)
+                self.assertNotIn(message, str(error))
+
     def test_stage_and_reason_are_in_blocked_report(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
