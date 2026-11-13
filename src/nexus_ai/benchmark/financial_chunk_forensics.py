@@ -5,18 +5,30 @@ belongs to the correct table row, metric, reporting period or currency.
 """
 from __future__ import annotations
 
-import re
 import unicodedata
 from collections.abc import Sequence
 
 from nexus_ai.documents.types import ExtractedPage, SourceChunk
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+_ARABIC_ALEF = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا"})
+_ARABIC_DIACRITICS = frozenset((
+    *range(0x0610, 0x061B),
+    *range(0x064B, 0x0660),
+    0x0670,
+    *range(0x06D6, 0x06EE),
+))
 
 
 def normalize_anchor(value: str) -> str:
-    """Unicode/Arabic digit normalization, no guesswork or fuzzy matching."""
-    return " ".join(unicodedata.normalize("NFKC", value).translate(_DIGITS).casefold().split())
+    """Normalize Arabic display variants for diagnostics, not fact extraction.
+
+    Strip tatweel and Arabic vowel marks and fold alef-hamza variants;
+    preserve amounts, punctuation, word order, currencies and source text.
+    """
+    value = unicodedata.normalize("NFKC", value).translate(_DIGITS)
+    value = "".join(ch for ch in value if ch != "ـ" and ord(ch) not in _ARABIC_DIACRITICS)
+    return " ".join(value.translate(_ARABIC_ALEF).casefold().split())
 
 
 def inspect_page_anchors(
