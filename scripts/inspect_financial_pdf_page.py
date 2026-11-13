@@ -60,13 +60,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--page", required=True, type=int)
     parser.add_argument("--year", required=True, type=int)
-    parser.add_argument("--anchor", action="append", required=True, dest="anchors")
+    anchor_input = parser.add_mutually_exclusive_group(required=True)
+    anchor_input.add_argument("--anchor", action="append", dest="anchors")
+    anchor_input.add_argument("--anchors-json", type=Path, dest="anchors_json")
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
 
-    if not 2 <= len(args.anchors) <= 8:
-        parser.error("require 2 to 8 --anchor values")
     try:
+        if args.anchors_json is not None:
+            anchor_file = args.anchors_json.expanduser()
+            if not anchor_file.is_file() or anchor_file.is_symlink() or anchor_file.stat().st_size > 4096:
+                raise ValueError("anchor file is missing, linked, or too large")
+            anchors = json.loads(anchor_file.read_text(encoding="utf-8-sig"))
+        else:
+            anchors = args.anchors
+        if not isinstance(anchors, list) or not 2 <= len(anchors) <= 8:
+            raise ValueError("require 2 to 8 anchors")
         report = args.report.expanduser()
         if report.is_symlink():
             raise ValueError("symlink report output is forbidden")
@@ -75,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         root = pdf.parent.resolve(strict=True)
         if report == root or root in report.parents or report == pdf.resolve(strict=True):
             raise ValueError("report must be outside the PDF's source directory")
-        output = run_page_forensics(pdf, page=args.page, year=args.year, anchors=args.anchors)
+        output = run_page_forensics(pdf, page=args.page, year=args.year, anchors=anchors)
         report.parent.mkdir(parents=True, exist_ok=True)
         encoded = (json.dumps(output, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
         fd, tmp = tempfile.mkstemp(prefix=".nexus-forensic-", suffix=".tmp", dir=report.parent)
@@ -94,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             "all_anchors_within_line_window": output.get("findings", {}).get("all_anchors_within_line_window"),
         }, ensure_ascii=True))
         return 0 if output["status"] == "PASS" else 1
-    except (OSError, ValueError):
+    except (OSError, ValueError, UnicodeError):
         print('{"status":"BLOCKED","reason":"invalid_input_or_output"}')
         return 1
 
