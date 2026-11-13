@@ -140,6 +140,14 @@ def create_text_windows(
         while local_start < len(chunk.text):
             local_end = min(local_start + window_chars, len(chunk.text))
             text = chunk.text[local_start:local_end]
+            # PDF layout extraction may contain whitespace-only spans. Do not
+            # send them to E5 or fabricate their vectors; preserve source
+            # offsets of all retained windows without trimming their text.
+            if not text.strip():
+                if local_end == len(chunk.text):
+                    break
+                local_start = local_end - overlap_chars
+                continue
             source_start = chunk.start_char + local_start if chunk.offsets_reliable and chunk.start_char is not None else None
             source_end = chunk.start_char + local_end if chunk.offsets_reliable and chunk.start_char is not None else None
             material = "\0".join((chunk.chunk_id, str(local_start), str(local_end), text))
