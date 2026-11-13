@@ -215,6 +215,16 @@ class PostgresDocumentIndex(DocumentIndexRepository):
                 )
                 current = cursor.fetchone()
                 if current is None:
+                    # ON CONFLICT DO NOTHING can indicate another document ID
+                    # already owns this workspace/source path. Fail closed with
+                    # an explicit identity error, not an unexplained missing row.
+                    cursor.execute(
+                        """SELECT document_id FROM nexus_rag_documents
+                           WHERE workspace_id = %s AND source_path = %s""",
+                        (document.workspace_id, document.source_path),
+                    )
+                    if cursor.fetchone() is not None:
+                        raise ValueError("source path is already bound to a different document identity")
                     raise RuntimeError("document identity row disappeared during activation")
                 if current[0] != document.source_path:
                     raise ValueError("document ID is already bound to a different source path")
