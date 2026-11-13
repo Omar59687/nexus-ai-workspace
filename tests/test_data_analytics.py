@@ -127,16 +127,17 @@ class BoundedAnalyticsTests(unittest.TestCase):
                           group_column="Company", amount_column="Revenue",
                           sheet_name="Unapproved")
 
-    def test_xlsx_numeric_float_must_not_be_silently_coerced(self):
+    def test_xlsx_numeric_float_uses_disclosed_decimal_policy(self):
         from openpyxl import Workbook
         wb = Workbook()
         wb.active.append(["Company", "Revenue"])
         wb.active.append(["A", 0.1])
         buffer = io.BytesIO()
         wb.save(buffer)
-        with self.assertRaises(AnalyticsInputError):
-            analyze_table(buffer.getvalue(), file_type="xlsx",
-                          group_column="Company", amount_column="Revenue")
+        result = analyze_table(buffer.getvalue(), file_type="xlsx",
+                               group_column="Company", amount_column="Revenue")
+        self.assertEqual(result["total"], "0.1")
+        self.assertIn("round-trip decimal", result["numeric_policy"])
 
 
 if __name__ == "__main__":
