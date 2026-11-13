@@ -222,7 +222,7 @@ def _safe_error_category(exc: Exception) -> str:
 
     if isinstance(exc, AnswerOutputRejectedError):
         allowed = {
-            "fabricated_citation_id", "unsupported_numeric_claim", "invalid_model_output",
+            "fabricated_citation_id", "unsupported_numeric_claim", "citation_id_leaked_into_answer", "invalid_model_output",
             "empty_answer", "answer_without_citations", "duplicate_citation_id",
             "duplicate_evidence_identity", "evidence_limit_exceeded", "workspace_mismatch",
         }
