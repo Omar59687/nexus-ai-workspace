@@ -25,6 +25,11 @@ from nexus_ai.benchmark.financial_chunk_forensics import normalize_anchor
 GOLD_REVENUE_MILLION_SAR = 19642
 GOLD_REVENUE_THOUSAND_SAR = 19641705
 GOLD_REVENUE_2024_MILLION_SAR = 18206
+GOLD_REVENUE_2024_THOUSAND_SAR = 18206447
+# Independently checked against owner-provided screenshots. PDF page numbers,
+# NOT the printed annual-report page numbers (278 and 282).
+VISUALLY_VERIFIED_REVENUE_PAGES = (140, 142)
+
 GOLD_SOURCE = (
     "https://www.saudiexchange.sa/wps/portal/saudiexchange/newsandreports/"
     "issuer-news/issuer-announcements/issuer-announcements-details/"
@@ -86,6 +91,23 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
         if chunk.page_number in candidate_pages
         and _amount_present(chunk.text) and _metric_present(chunk.text)
     }
+    # Gold-page annotations are from visually checked, original PDF tables,
+    # not produced by lexical retrieval or inferred from arbitrary number hits.
+    # Validate that the exact audited number survived extraction on each page.
+    page_by_number = {page.page_number: page for page in indexed.document.pages}
+    verified_pages = {
+        page_number: bool(
+            page_number in page_by_number
+            and "precise_thousands" in _amount_formats(page_by_number[page_number].text)
+        )
+        for page_number in VISUALLY_VERIFIED_REVENUE_PAGES
+    }
+    verified_page_set = {page for page, valid in verified_pages.items() if valid}
+    verified_chunks = {
+        chunk.chunk_id for chunk in indexed.chunks
+        if chunk.page_number in verified_page_set and
+        "precise_thousands" in _amount_formats(chunk.text)
+    }
     queries = []
     for label, response in zip(("ar", "en"), arabic_and_english_results):
         hits = list(response.results)
@@ -96,7 +118,16 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
             for rank, item in enumerate(hits, 1)
             if item.citation.page_number in candidate_pages
         ]
+        verified_hits = [
+            {"rank": rank, "page_number": item.citation.page_number,
+             "exact_amount_in_cited_chunk": item.citation.chunk_id in verified_chunks}
+            for rank, item in enumerate(hits, 1)
+            if item.citation.page_number in verified_page_set
+        ]
         queries.append({
+            "verified_gold_page_at_5": any(row["rank"] <= 5 for row in verified_hits),
+            "verified_gold_page_at_10": any(row["rank"] <= 10 for row in verified_hits),
+            "verified_gold_page_hits": verified_hits,
             "language": label, "retrieval_status": response.status,
             "relevant_candidate_page_at_5": any(row["rank"] <= 5 for row in relevant),
             "relevant_candidate_page_at_10": any(row["rank"] <= 10 for row in relevant),
@@ -108,7 +139,28 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
                  "amount_million_sar": GOLD_REVENUE_MILLION_SAR,
                  "precise_amount_thousand_sar": GOLD_REVENUE_THOUSAND_SAR,
                  "previous_year_amount_million_sar": GOLD_REVENUE_2024_MILLION_SAR,
+                 "previous_year_precise_amount_thousand_sar": GOLD_REVENUE_2024_THOUSAND_SAR,
                  "public_source": GOLD_SOURCE},
+        "verified_gold_page_numbers": list(VISUALLY_VERIFIED_REVENUE_PAGES),
+        "verified_gold_page_amount_extracted": [
+            {"page_number": page, "precise_amount_present": found}
+            for page, found in verified_pages.items()
+        ],
+        "verified_gold_source": "owner_visual_review_of_original_pdf_tables",
+        "verified_gold_citations": {
+            "pdf_page_140": "printed pages 278-279; note 32 consolidated revenue",
+            "pdf_page_142": "printed pages 282-283; note 42 operating segments",
+        },
+        "gold_evidence_status": (
+            "EXACT_AMOUNT_EXTRACTED_ON_BOTH_VISUALLY_VERIFIED_PAGES"
+            if all(verified_pages.values()) else
+            "VISUALLY_VERIFIED_PAGE_AMOUNT_NOT_EXTRACTED"
+        ),
+        "verified_gold_retrieval_status": (
+            "VERIFIED_PAGES_RETRIEVED_BILINGUALLY" if all(verified_pages.values()) and
+            all(row["verified_gold_page_at_10"] for row in queries)
+            else "VERIFIED_GOLD_RETRIEVAL_GAP"
+        ),
         "candidate_pages": candidate_pages[:50],
         "amount_pages": amount_pages[:50],
         "metric_pages_count": len(metric_pages),
@@ -126,13 +178,17 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
             all(row["relevant_candidate_page_at_10"] for row in queries)
             else "RETRIEVAL_OR_EXTRACTION_GAP"
         ),
-        "financial_truth_status": "HUMAN_TABLE_ROW_CONFIRMATION_REQUIRED",
+        "financial_truth_status": (
+            "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_RETRIEVAL_UNVERIFIED"
+        ),
         "limitations": [
             "A page may contain the number in a different table row or year.",
             "PDF page numbers are one-based; report page labels may differ.",
             "Currency/units cannot be inferred solely from page-level cooccurrence.",
             "The published gold result belongs to Mobily FY2025; the local PDF identity is checked only by its content digest and owner-selected path.",
             "A rounded millions value and a precise thousands value are distinct reporting precisions; a matching amount does not establish the page's unit.",
+            "Visual human annotations are independent of extraction but not pinned to this PDF hash; verify the document edition when reusing them.",
+            "Verified page retrieval is measured separately from raw page-level cooccurrence; do not claim success from presence of a gold number alone.",
         ],
     }
 
