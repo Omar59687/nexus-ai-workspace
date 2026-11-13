@@ -85,8 +85,54 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
         self.assertEqual(report["candidate_pages"], [114])
         self.assertEqual(report["candidate_chunk_count"], 1)
         self.assertEqual(report["technical_status"], "CANDIDATES_RETRIEVED")
-        self.assertEqual(report["financial_truth_status"], "HUMAN_TABLE_ROW_CONFIRMATION_REQUIRED")
+        self.assertEqual(report["financial_truth_status"], "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_RETRIEVAL_UNVERIFIED")
         self.assertNotIn(evidence, json.dumps(report, ensure_ascii=False))
+
+    def test_verified_pdf_pages_pass_evidence_gate_despite_reordered_arabic_label(self):
+        # The source table was visually checked independently. These fake
+        # strings emulate PDF text extraction omitting/reordering Arabic labels.
+        pages = (
+            ExtractedPage(140, "2025 19,641,705 2024 18,206,447"),
+            ExtractedPage(142, "قطاع التشغيل 19,641,705"),
+        )
+        indexed = SimpleNamespace(
+            document=SimpleNamespace(pages=pages),
+            chunks=(
+                _row(pages[0].text, 140, "gold-140"),
+                _row(pages[1].text, 142, "gold-142"),
+            ),
+        )
+        report = assess_evidence(
+            indexed, (_retrieval(140, "gold-140"), _retrieval(142, "gold-142"))
+        )
+        self.assertEqual(report["candidate_pages"], [])
+        self.assertEqual(report["gold_evidence_status"],
+                         "EXACT_AMOUNT_EXTRACTED_ON_BOTH_VISUALLY_VERIFIED_PAGES")
+        self.assertEqual(report["verified_gold_retrieval_status"],
+                         "VERIFIED_PAGES_RETRIEVED_BILINGUALLY")
+        self.assertTrue(report["languages"][0]["verified_gold_page_at_10"])
+        self.assertTrue(report["languages"][1]["verified_gold_page_at_10"])
+        self.assertFalse(report["languages"][0]["relevant_candidate_page_at_10"])
+
+    def test_amount_present_on_verified_pages_is_not_a_retrieval_pass(self):
+        pages = (
+            ExtractedPage(140, "19,641,705"),
+            ExtractedPage(142, "19,641,705"),
+        )
+        indexed = SimpleNamespace(
+            document=SimpleNamespace(pages=pages),
+            chunks=(
+                _row(pages[0].text, 140, "gold-140"),
+                _row(pages[1].text, 142, "gold-142"),
+            ),
+        )
+        report = assess_evidence(
+            indexed, (_retrieval(114, "auditor"), _retrieval(11, "intro"))
+        )
+        self.assertEqual(report["gold_evidence_status"],
+                         "EXACT_AMOUNT_EXTRACTED_ON_BOTH_VISUALLY_VERIFIED_PAGES")
+        self.assertEqual(report["verified_gold_retrieval_status"],
+                         "VERIFIED_GOLD_RETRIEVAL_GAP")
 
     def test_candidate_outside_top_10_is_not_accepted(self):
         evidence = "Revenue 19,642 SAR 2025"
