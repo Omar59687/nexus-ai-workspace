@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Mapping
@@ -29,6 +28,7 @@ from nexus_ai.retrieval.embeddings import (
 from nexus_ai.retrieval.repository import DocumentIndexRepository
 from nexus_ai.retrieval.identity import (
     stable_index_generation_id,
+    stable_document_id as stable_collection_document_id,
     stable_processing_id,
     stable_source_version_id,
 )
@@ -241,9 +241,7 @@ class DocumentIngestionService:
 
 def stable_document_id(workspace_id: str, source_path: str) -> str:
     _validate_workspace_id(workspace_id)
-    normalized = PurePosixPath(source_path).as_posix()
-    normalized = os.path.normcase(normalized)
-    return hashlib.sha256(f"document-v1\0{workspace_id}\0{normalized}".encode("utf-8")).hexdigest()
+    return stable_collection_document_id(workspace_id, source_path)
 
 
 def stable_version_id(

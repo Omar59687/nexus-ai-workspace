@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from pathlib import PurePosixPath
 from typing import Any
 
 
@@ -21,6 +23,12 @@ def stable_source_version_id(document_id: str, content_sha256: str) -> str:
         "document_id": document_id,
         "content_sha256": content_sha256,
     })
+
+
+def stable_document_id(workspace_id: str, source_path: str) -> str:
+    """Stable workspace-scoped identity for one canonical relative source path."""
+    normalized = os.path.normcase(PurePosixPath(source_path).as_posix())
+    return hashlib.sha256(f"document-v1\0{workspace_id}\0{normalized}".encode("utf-8")).hexdigest()
 
 
 def stable_processing_id(
