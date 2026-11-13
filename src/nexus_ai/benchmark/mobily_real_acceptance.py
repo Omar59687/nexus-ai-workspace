@@ -23,6 +23,7 @@ from nexus_ai.benchmark.financial_chunk_forensics import normalize_anchor
 
 
 GOLD_REVENUE_MILLION_SAR = 19642
+GOLD_REVENUE_THOUSAND_SAR = 19641705
 GOLD_REVENUE_2024_MILLION_SAR = 18206
 GOLD_SOURCE = (
     "https://www.saudiexchange.sa/wps/portal/saudiexchange/newsandreports/"
@@ -33,7 +34,10 @@ QUERIES = (
     "إيرادات موبايلي للسنة المالية 2025 مليون ريال سعودي",
     "Mobily 2025 total revenue million SAR",
 )
-_AMOUNT = re.compile(r"(?<![0-9])19[\s,٬]?642(?![0-9])")
+# Official announcement rounds to millions, but audited statements report
+# the unrounded amount in SAR thousands. Do not treat 19.6 billion as exact.
+_AMOUNT_MILLIONS = re.compile(r"(?<![0-9])19[\\s,٬]?642(?![0-9])")
+_AMOUNT_THOUSANDS = re.compile(r"(?<![0-9])19[\\s,٬]?641[\\s,٬]?705(?![0-9])")
 _REVENUE = ("ايرادات", "الايرادات", "revenue", "revenues", "المبيعات")
 _WORKSPACE = "p4-single-owner-mobily-fy2025"
 _COLLECTION = "mobily-2025-official-benchmark"
@@ -44,8 +48,18 @@ def _numerals(text: str) -> str:
     return unicodedata.normalize("NFKC", text).translate(digit_map)
 
 
+def _amount_formats(text: str) -> tuple[str, ...]:
+    normalized = _numerals(text)
+    found = []
+    if _AMOUNT_MILLIONS.search(normalized):
+        found.append("rounded_millions")
+    if _AMOUNT_THOUSANDS.search(normalized):
+        found.append("precise_thousands")
+    return tuple(found)
+
+
 def _amount_present(text: str) -> bool:
-    return _AMOUNT.search(_numerals(text)) is not None
+    return bool(_amount_formats(text))
 
 
 def _metric_present(text: str) -> bool:
@@ -55,12 +69,18 @@ def _metric_present(text: str) -> bool:
 
 def assess_evidence(indexed, arabic_and_english_results) -> dict:
     """Score independent numeric-label candidates without exposing PDF text."""
-    candidate_pages = sorted({
-        page.page_number
-        for page in indexed.document.pages
-        if page.page_number is not None and _amount_present(page.text)
-        and _metric_present(page.text)
-    })
+    # Record independent amount and label signals before intersecting them.
+    # This avoids conflating "not extracted" with "extracted elsewhere".
+    amount_pages = sorted({page.page_number for page in indexed.document.pages
+                           if page.page_number is not None and _amount_present(page.text)})
+    metric_pages = sorted({page.page_number for page in indexed.document.pages
+                           if page.page_number is not None and _metric_present(page.text)})
+    candidate_pages = sorted(set(amount_pages) & set(metric_pages))
+    amount_formats = {
+        fmt: sorted(page.page_number for page in indexed.document.pages
+                    if page.page_number is not None and fmt in _amount_formats(page.text))[:50]
+        for fmt in ("rounded_millions", "precise_thousands")
+    }
     candidate_chunks = {
         chunk.chunk_id for chunk in indexed.chunks
         if chunk.page_number in candidate_pages
@@ -86,9 +106,18 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
     return {
         "gold": {"company": "Mobily", "financial_year": 2025, "metric": "revenue",
                  "amount_million_sar": GOLD_REVENUE_MILLION_SAR,
+                 "precise_amount_thousand_sar": GOLD_REVENUE_THOUSAND_SAR,
                  "previous_year_amount_million_sar": GOLD_REVENUE_2024_MILLION_SAR,
                  "public_source": GOLD_SOURCE},
         "candidate_pages": candidate_pages[:50],
+        "amount_pages": amount_pages[:50],
+        "metric_pages_count": len(metric_pages),
+        "amount_formats": amount_formats,
+        "signal_status": (
+            "AMOUNT_ABSENT_FROM_EXTRACTED_TEXT" if not amount_pages else
+            "AMOUNT_FOUND_NO_REVENUE_LABEL_ON_SAME_PAGE" if not candidate_pages else
+            "AMOUNT_AND_REVENUE_LABEL_SHARE_PAGE"
+        ),
         "candidate_page_count": len(candidate_pages),
         "candidate_chunk_count": len(candidate_chunks),
         "languages": queries,
@@ -103,6 +132,7 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
             "PDF page numbers are one-based; report page labels may differ.",
             "Currency/units cannot be inferred solely from page-level cooccurrence.",
             "The published gold result belongs to Mobily FY2025; the local PDF identity is checked only by its content digest and owner-selected path.",
+            "A rounded millions value and a precise thousands value are distinct reporting precisions; a matching amount does not establish the page's unit.",
         ],
     }
 
