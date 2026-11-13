@@ -252,6 +252,25 @@ class PdfRagE2EContractTests(unittest.TestCase):
             self.assertEqual(parsed_file["case_question"], "كم بلغت الإيرادات؟")
             self.assertTrue(arabic_stdout.getvalue().isascii())
 
+    def test_answer_coverage_distinguishes_safe_but_unnecessary_abstention(self):
+        case = next(row for row in PDF_QUERY_CASES if row.case_id == "en_to_en")
+        result = _run_case(self.retrieval, _answerer(FakeAnswerAdapter(abstain=True)), case, self.indexed)
+        self.assertEqual(result["execution_status"], "PASS")
+        self.assertEqual(result["fixture_answerability"], "ANSWERABLE")
+        self.assertEqual(result["answer_coverage_status"], "UNNECESSARY_ABSTENTION")
+        self.assertTrue(result["expected_evidence_retrieved"])
+        self.assertEqual(result["answer_citations"], [])
+
+    def test_answer_coverage_distinguishes_answered_and_expected_abstention(self):
+        revenue_case = next(row for row in PDF_QUERY_CASES if row.case_id == "en_to_en")
+        revenue = _run_case(self.retrieval, _answerer(FakeAnswerAdapter()), revenue_case, self.indexed)
+        self.assertEqual(revenue["answer_coverage_status"], "ANSWERED_WITH_CITATIONS")
+        self.assertEqual(revenue["fixture_answerability"], "ANSWERABLE")
+        no_answer_case = next(row for row in PDF_QUERY_CASES if row.case_id == "no_answer")
+        no_answer = _run_case(self.retrieval, _answerer(FakeAnswerAdapter()), no_answer_case, self.indexed)
+        self.assertEqual(no_answer["fixture_answerability"], "UNANSWERABLE")
+        self.assertEqual(no_answer["answer_coverage_status"], "EXPECTED_ABSTENTION")
+
     def test_empty_evidence_abstains_without_generation_and_no_answer_control_is_empty(self):
         adapter = FakeAnswerAdapter()
         answerer = _answerer(adapter)
