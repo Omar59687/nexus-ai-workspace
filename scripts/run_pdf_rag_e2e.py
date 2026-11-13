@@ -48,19 +48,20 @@ class PdfQueryCase:
     language: Literal["ar", "en"]
     expected_sources: tuple[str, ...]
     empty_evidence: bool = False
+    expected_numeric_facts: tuple[str, ...] = ()
 
 
 PDF_QUERY_CASES = (
     PdfQueryCase("en_to_en", "EN→EN", "What was Northstar's 2024 revenue?", "en",
-                 ("english_revenue.pdf",)),
+                 ("english_revenue.pdf",), expected_numeric_facts=("42 million dollars",)),
     PdfQueryCase("ar_to_ar", "AR→AR", "كم بلغت إيرادات نورث ستار التجريبية لعام 2024؟", "ar",
-                 ("arabic_revenue.pdf",)),
+                 ("arabic_revenue.pdf",), expected_numeric_facts=("42 million dollars",)),
     PdfQueryCase("ar_to_en", "AR→EN", "ما قيمة إيرادات Northstar في عام 2024؟", "ar",
-                 ("english_revenue.pdf",)),
+                 ("english_revenue.pdf",), expected_numeric_facts=("42 million dollars",)),
     PdfQueryCase("en_to_ar", "EN→AR", "What revenue did the experimental Northstar report state?", "en",
-                 ("arabic_revenue.pdf",)),
+                 ("arabic_revenue.pdf",), expected_numeric_facts=("42 million dollars",)),
     PdfQueryCase("multi_document", "EN→EN", "What were Northstar's 2024 revenue and employee count?", "en",
-                 ("english_revenue.pdf", "english_headcount.pdf")),
+                 ("english_revenue.pdf", "english_headcount.pdf"), expected_numeric_facts=("42 million dollars", "1,200")),
     PdfQueryCase("no_answer", "EN→EN", "What was Northstar's 2024 net income?", "en", (), True),
 )
 
@@ -232,6 +233,20 @@ def _safe_error_category(exc: Exception) -> str:
     return "case_execution_failure"
 
 
+def _fixture_numeric_facts_present(answer_text: str, expected_facts: tuple[str, ...]) -> bool:
+    """Check explicit numeric fixture facts, not open-domain semantic correctness."""
+    from nexus_ai.retrieval.answering import _claim_supported, _numeric_claims
+
+    actual_claims = _numeric_claims(answer_text)
+    for expected_text in expected_facts:
+        expected = _numeric_claims(expected_text)
+        if len(expected) != 1 or not any(
+            _claim_supported(gold, actual) for gold in expected for actual in actual_claims
+        ):
+            return False
+    return True
+
+
 def _run_case(retrieval, answerer, case, indexed_by_path):
     from nexus_ai.documents.types import RetrievalFilters
 
@@ -279,6 +294,7 @@ def _run_case(retrieval, answerer, case, indexed_by_path):
             "abstained": None,
             "answer_citations": [],
             "answer_coverage_status": "GENERATION_FAILED",
+            "fixture_numeric_facts_match": False,
         })
         return record
     answer_citations_valid = all(
@@ -291,8 +307,13 @@ def _run_case(retrieval, answerer, case, indexed_by_path):
     else:
         execution_ok = bool(retrieved) and answer_citations_valid and (answer.abstained or bool(answer.citations))
         generation_status = "STRUCTURED_OUTPUT_ACCEPTED"
+    facts_match = (
+        None if case.empty_evidence or answer.abstained
+        else _fixture_numeric_facts_present(answer.answer, case.expected_numeric_facts)
+    )
     record.update({
         "execution_status": "PASS" if execution_ok and retrieval_integrity and expected_found else "FAIL",
+        "fixture_numeric_facts_match": facts_match,
         "generation_status": generation_status,
         "answer": answer.answer,
         "abstained": answer.abstained,
@@ -354,6 +375,10 @@ def run_live_pdf_rag() -> dict[str, object]:
         unnecessary_abstentions = sum(
             case["answer_coverage_status"] == "UNNECESSARY_ABSTENTION" for case in answerable
         )
+        numeric_fact_matches = sum(
+            case["answer_coverage_status"] == "ANSWERED_WITH_CITATIONS"
+            and case["fixture_numeric_facts_match"] is True for case in answerable
+        )
         return {
             "report_version": 1,
             "diagnostic_kind": "synthetic generated-PDF end-to-end diagnostic",
@@ -362,6 +387,8 @@ def run_live_pdf_rag() -> dict[str, object]:
             "fixture_answer_coverage": {
                 "answerable_cases": len(answerable),
                 "answered_with_citations": answered,
+                "answered_with_expected_numeric_facts": numeric_fact_matches,
+                "all_expected_numeric_facts_present": numeric_fact_matches == len(answerable),
                 "unnecessary_abstentions": unnecessary_abstentions,
                 "coverage_fraction": round(answered / len(answerable), 3) if answerable else None,
                 "all_answerable_cases_answered": answered == len(answerable),
