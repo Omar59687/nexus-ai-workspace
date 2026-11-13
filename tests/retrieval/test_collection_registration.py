@@ -5,6 +5,7 @@ from pathlib import Path
 
 from nexus_ai.documents.service import DocumentIngestionService
 from nexus_ai.retrieval.collection_registration import register_indexed_manifest
+from nexus_ai.retrieval.collection_query import AuthorizedCollectionRetriever
 from nexus_ai.retrieval.company_metadata import (
     CompanyYearFilter, CompanyYearMetadataCatalog, MetadataIntegrityError,
 )
@@ -67,6 +68,39 @@ class RegistrationIntegrationTests(unittest.TestCase):
         self.assertEqual([x.citation.source_path for x in result.results], ["mobily25.txt"])
         self.assertIn("88 million", result.results[0].citation.exact_text)
         self.assertEqual(self._search("Aramco", 2025).results[0].citation.source_path, "aramco25.txt")
+
+    def test_authorized_facade_requires_filter_and_never_falls_back(self):
+        self._register()
+        facade = AuthorizedCollectionRetriever(
+            RetrievalService(
+                repository=self.repository, embedder=self.embedder,
+                company_metadata=self.catalog,
+            ),
+            workspace_id="workspace-a", collection_id="reports",
+        )
+        with self.assertRaises(ValueError):
+            facade.retrieve("revenue")
+        result = facade.retrieve("revenue", company="Mobily", financial_year=2024)
+        self.assertEqual(
+            [row.citation.source_path for row in result.results], ["mobily24.txt"]
+        )
+        no_match = facade.retrieve("revenue", company="Aramco", financial_year=2024)
+        self.assertEqual(no_match.status, "empty")
+        self.assertFalse(no_match.results)
+        with self.assertRaises(ValueError):
+            facade.retrieve("revenue", company="nonexistent", financial_year=2025)
+
+    def test_authorized_facade_cross_workspace_cannot_search_other_sources(self):
+        self._register()
+        facade = AuthorizedCollectionRetriever(
+            RetrievalService(
+                repository=self.repository, embedder=self.embedder,
+                company_metadata=self.catalog,
+            ),
+            workspace_id="workspace-b", collection_id="reports",
+        )
+        with self.assertRaises(MetadataIntegrityError):
+            facade.retrieve("revenue", company="Mobily", financial_year=2025)
 
     def test_missing_index_prevents_partial_registration(self):
         baseline = self._register()
