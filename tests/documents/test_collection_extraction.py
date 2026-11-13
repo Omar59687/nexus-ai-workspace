@@ -43,6 +43,16 @@ class CollectionExtractionTests(unittest.TestCase):
         self.assertEqual(results["duplicate_count"], 1)
         self.assertEqual(results["documents"][1]["duplicate_of"], "one.txt")
 
+    def test_failed_first_copy_never_deduplicates_another_failed_copy(self):
+        (self.root / "first.txt").write_bytes(b"\\xff")
+        (self.root / "second.txt").write_bytes(b"\\xff")
+        results = extract_collection(
+            self.root, [item("first.txt"), item("second.txt")]
+        )
+        self.assertEqual(results["blocked_count"], 2)
+        self.assertEqual(results["duplicate_count"], 0)
+        self.assertEqual(results["extracted_count"], 0)
+
     def test_failed_document_does_not_block_other_documents(self):
         (self.root / "valid.txt").write_text("revenue", encoding="utf-8")
         (self.root / "bad.txt").write_bytes(b"\xff\xfe")
