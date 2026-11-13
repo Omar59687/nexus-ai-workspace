@@ -39,14 +39,17 @@ def main(argv: list[str] | None = None) -> int:
         "gold_evidence_status": evaluation.get("gold_evidence_status"),
         "verified_gold_retrieval_status": evaluation.get("verified_gold_retrieval_status"),
         "verified_gold_page_amount_extracted": evaluation.get("verified_gold_page_amount_extracted"),
-        "technical_status": evaluation.get("technical_status"),
+        "acceptance_summary": evaluation.get("acceptance_summary"),
+        "acceptance_gates": evaluation.get("acceptance_gates"),
+        "legacy_same_page_word_match_status": evaluation.get("legacy_same_page_word_match_status"),
         "financial_truth_status": evaluation.get("financial_truth_status"),
         "queries": [
             {"language": row["language"], "top_5_pages": row["top_5_pages"],
              "candidate_at_5": row["relevant_candidate_page_at_5"],
              "candidate_at_10": row["relevant_candidate_page_at_10"],
              "verified_gold_page_at_5": row["verified_gold_page_at_5"],
-             "verified_gold_page_at_10": row["verified_gold_page_at_10"]}
+             "verified_gold_page_at_10": row["verified_gold_page_at_10"],
+             "precise_amount_in_cited_chunk_at_10": row["precise_amount_in_cited_chunk_at_10"]}
             for row in evaluation.get("languages", [])
         ],
     }, ensure_ascii=True))
