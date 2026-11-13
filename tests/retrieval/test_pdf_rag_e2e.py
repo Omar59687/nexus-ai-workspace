@@ -23,6 +23,7 @@ from scripts.run_pdf_rag_e2e import (
     PDF_QUERY_CASES,
     WORKSPACE_ID,
     _citation_maps_to_extracted_pdf,
+    _fixture_numeric_facts_present,
     _run_case,
     generated_text_pdf,
     ingest_fixture_pdfs,
@@ -251,6 +252,39 @@ class PdfRagE2EContractTests(unittest.TestCase):
             self.assertEqual(parsed_console["case_question"], "كم بلغت الإيرادات؟")
             self.assertEqual(parsed_file["case_question"], "كم بلغت الإيرادات؟")
             self.assertTrue(arabic_stdout.getvalue().isascii())
+
+    def test_fixture_numeric_facts_check_actual_values_not_only_citations(self):
+        self.assertTrue(_fixture_numeric_facts_present(
+            "Northstar revenue was 42 million dollars.", ("42 million dollars",)
+        ))
+        self.assertTrue(_fixture_numeric_facts_present(
+            "بلغت الإيرادات 42 مليون دولار.", ("42 million dollars",)
+        ))
+        self.assertTrue(_fixture_numeric_facts_present(
+            "Revenue was 42 million dollars and headcount was 1,200.",
+            ("42 million dollars", "1,200"),
+        ))
+        self.assertFalse(_fixture_numeric_facts_present(
+            "ev_" + "a" * 64, ("42 million dollars",)
+        ))
+        self.assertFalse(_fixture_numeric_facts_present(
+            "Revenue was 41 million dollars.", ("42 million dollars",)
+        ))
+        self.assertFalse(_fixture_numeric_facts_present(
+            "Revenue was 42 million dollars.", ("42 million dollars", "1,200")
+        ))
+
+    def test_pdf_case_fact_check_distinguishes_valid_citations_from_wrong_answer(self):
+        case = next(row for row in PDF_QUERY_CASES if row.case_id == "en_to_en")
+        wrong = _run_case(
+            self.retrieval,
+            _answerer(FakeAnswerAdapter(answer="Revenue was reported for 2024.")),
+            case,
+            self.indexed,
+        )
+        self.assertEqual(wrong["execution_status"], "PASS")
+        self.assertEqual(wrong["answer_coverage_status"], "ANSWERED_WITH_CITATIONS")
+        self.assertFalse(wrong["fixture_numeric_facts_match"])
 
     def test_answer_coverage_distinguishes_safe_but_unnecessary_abstention(self):
         case = next(row for row in PDF_QUERY_CASES if row.case_id == "en_to_en")
