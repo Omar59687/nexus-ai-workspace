@@ -12,6 +12,9 @@ from nexus_ai.documents.collection_preflight import (
     MAX_FILE_BYTES, MAX_TOTAL_BYTES, _manifest_entries, CollectionManifestError,
 )
 from nexus_ai.documents.extractors import extractor_for_path
+from nexus_ai.documents.chunking import SourceAwareChunker, ChunkingConfig
+from nexus_ai.documents.service import stable_document_id
+from nexus_ai.retrieval.identity import stable_source_version_id
 from nexus_ai.documents.filesystem import read_approved_file
 
 
@@ -46,6 +49,7 @@ def extract_collection(
         raise CollectionManifestError("approved root must be a directory")
 
     rows = []
+    chunker = SourceAwareChunker(ChunkingConfig(max_chunks=20_000))
     total_bytes = 0
     seen_digests = {}
     for entry in checked:
@@ -88,6 +92,23 @@ def extract_collection(
             nonblank = sum(bool(page.text.strip()) for page in extracted.pages)
             if not nonblank:
                 raise ValueError("no extractable text")
+            # Preview the same source-aware chunks used by the RAG ingestion
+            # service, but do not embed or persist source text.
+            document_id = stable_document_id("collection-extraction-preview", path)
+            version_id = stable_source_version_id(document_id, digest)
+            chunks = chunker.chunk(
+                extracted, document_id=document_id, version_id=version_id,
+                source_path=path, source_sha256=digest,
+            )
+            for chunk in chunks:
+                if chunk.offsets_reliable:
+                    source = next(
+                        (page.text for page in extracted.pages
+                         if page.page_number == chunk.page_number),
+                        None,
+                    )
+                    if source is None or source[chunk.start_char:chunk.end_char] != chunk.text:
+                        raise ValueError("invalid source chunk provenance")
             seen_digests[digest] = path
             row.update(
                 status="extracted",
@@ -97,6 +118,11 @@ def extract_collection(
                 text_pages=nonblank,
                 extracted_char_count=sum(len(page.text) for page in extracted.pages),
                 source_warning_count=len(extracted.warnings),
+                chunk_count=len(chunks),
+                chunker_fingerprint=chunker.fingerprint,
+                chunk_identity_digest=hashlib.sha256(
+                    "\\n".join(chunk.chunk_id for chunk in chunks).encode("ascii")
+                ).hexdigest(),
                 extractor=extracted.extractor_name,
                 extractor_version=extracted.extractor_version,
             )
@@ -122,7 +148,7 @@ def extract_collection(
             "directory_crawling": "NONE",
         },
         "limitations": [
-            "Extracted text is not persisted; this is not a searchable collection.",
+            "Extracted text and chunks are not persisted; this is not a searchable collection.",
             "Page-level text coverage is not proof of table or financial accuracy.",
             "PDF workers apply existing bounded isolation, not a hostile-PDF sandbox.",
         ],
