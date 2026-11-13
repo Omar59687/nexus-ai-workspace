@@ -437,8 +437,10 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
             return self.repository().activate(candidate)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = [future.result(timeout=30) for future in
-                       (pool.submit(activate, candidate) for candidate in candidates)]
+            # Submit BOTH tasks before waiting: generator-driven submission
+            # deadlocks at the barrier when result() blocks on the first.
+            futures = [pool.submit(activate, candidate) for candidate in candidates]
+            results = [future.result(timeout=30) for future in futures]
         self.assertEqual(results, [True, True])
         active = self.repository().get_active("workspace-a", "doc-a")
         candidate_texts = {row.document.pages[0].text for row in candidates}
