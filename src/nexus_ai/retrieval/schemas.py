@@ -40,8 +40,8 @@ class RetrievedEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     score: float
-    score_type: Literal["cosine_similarity", "bm25"]
-    strategy: Literal["windowed_e5", "bm25_raw"]
+    score_type: Literal["cosine_similarity", "bm25", "context"]
+    strategy: Literal["windowed_e5", "bm25_raw", "adjacent_page_context"]
     citation: EvidenceCitation
 
 
@@ -49,6 +49,6 @@ class RetrievalResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: StrictStr
-    strategy: Literal["windowed_e5", "bm25_raw"]
+    strategy: Literal["windowed_e5", "bm25_raw", "bm25_page_context"]
     status: Literal["ok", "empty"]
     results: list[RetrievedEvidence]
