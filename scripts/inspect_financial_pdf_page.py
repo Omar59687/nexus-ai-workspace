@@ -17,11 +17,13 @@ from nexus_ai.documents.collection_types import CollectionIndexLimits
 from nexus_ai.retrieval.collection_repository import InMemoryCollectionIndexRepository
 
 
-def run_page_forensics(pdf: Path, *, page: int, anchors: list[str]) -> dict[str, object]:
+def run_page_forensics(pdf: Path, *, page: int, year: int, anchors: list[str]) -> dict[str, object]:
     if not pdf.is_absolute() or pdf.suffix.casefold() != ".pdf":
         raise ValueError("owner must supply an absolute PDF path")
     if not pdf.is_file() or pdf.is_symlink():
         raise ValueError("PDF must be a regular, non-symlink file")
+    if type(year) is not int or not 1900 <= year <= 2100:
+        raise ValueError("report year is invalid")
     repo = InMemoryCollectionIndexRepository()
     service = CollectionIndexService(
         approved_root=pdf.parent,
@@ -29,7 +31,7 @@ def run_page_forensics(pdf: Path, *, page: int, anchors: list[str]) -> dict[str,
         limits=CollectionIndexLimits(max_documents=1),
     )
     outcome = service.index("local-financial-page-forensics", [
-        {"path": pdf.name, "company": "OwnerSelected", "year": 2025}
+        {"path": pdf.name, "company": "OwnerSelected", "year": year}
     ])
     record = outcome["documents"][0]
     if record["status"] not in ("indexed", "unchanged"):
@@ -57,6 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", required=True, action="store_true")
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--page", required=True, type=int)
+    parser.add_argument("--year", required=True, type=int)
     parser.add_argument("--anchor", action="append", required=True, dest="anchors")
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args(argv)
@@ -72,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         root = pdf.parent.resolve(strict=True)
         if report == root or root in report.parents or report == pdf.resolve(strict=True):
             raise ValueError("report must be outside the PDF's source directory")
-        output = run_page_forensics(pdf, page=args.page, anchors=args.anchors)
+        output = run_page_forensics(pdf, page=args.page, year=args.year, anchors=args.anchors)
         report.parent.mkdir(parents=True, exist_ok=True)
         encoded = (json.dumps(output, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
         fd, tmp = tempfile.mkstemp(prefix=".nexus-forensic-", suffix=".tmp", dir=report.parent)
