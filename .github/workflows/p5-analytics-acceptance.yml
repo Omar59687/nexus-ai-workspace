@@ -1,0 +1,83 @@
+name: Phase 5 bounded data analytics + Phase 4 regression
+
+on:
+  push:
+    branches:
+      - feature/p5-bounded-data-analytics
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analytics-and-p4-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nexus_test
+          POSTGRES_PASSWORD: isolated_ci_only
+          POSTGRES_DB: nexus_ai_p4_it_ci2026
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus_test -d nexus_ai_p4_it_ci2026"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
+      NEXUS_P4_TEST_DATABASE_URL: postgresql://nexus_test:isolated_ci_only@127.0.0.1:5432/nexus_ai_p4_it_ci2026
+      PYTHONIOENCODING: utf-8
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bounded test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pytest>=8,<9" "psycopg[binary]>=3.2,<4" "pypdf>=6,<8" "pydantic>=2,<3" "pandas>=2.2,<3" "openpyxl>=3.1,<4"
+      - name: Phase 5 deterministic CSV and XLSX analytics
+        run: python -m pytest -q tests/test_data_analytics.py
+      - name: Phase 4 retrieval and financial regressions
+        run: |
+          python -m pytest -q \
+            tests/documents/test_collection_preflight.py \
+            tests/documents/test_collection_extraction.py \
+            tests/documents/test_collection_index.py \
+            tests/retrieval/test_collection_lexical.py \
+            tests/retrieval/test_collection_registration.py \
+            tests/retrieval/test_company_year_metadata.py \
+            tests/retrieval/test_financial_chunk_forensics.py \
+            tests/retrieval/test_phase4_closure.py \
+            tests/retrieval/test_mobily_real_acceptance.py \
+            tests/retrieval/test_page_context.py \
+            tests/test_financial_evidence_evaluation.py
+      - name: Disposable PostgreSQL regression, no skipped live tests
+        run: |
+          set -o pipefail
+          python -m pytest -q -rs tests/persistence/test_postgres_integration.py | tee /tmp/postgres-live.log
+          if grep -Eq '([1-9][0-9]*) skipped' /tmp/postgres-live.log; then
+            echo "PostgreSQL live tests skipped; phase regression denied"
+            exit 1
+          fi
+          python -m pytest -q tests/persistence/test_postgres_repository.py
+      - name: Synthetic financial retrieval quality gate
+        run: |
+          python -m nexus_ai.benchmark.financial_evidence > /tmp/p4-report.json
+          python - <<'PY'
+          import json
+          observed = json.load(open('/tmp/p4-report.json', encoding='utf-8'))['metrics']
+          expected = json.load(open('benchmarks/results/financial_evidence_synthetic_v1.json', encoding='utf-8'))['metrics']
+          assert observed['recall_at_5']['value'] >= expected['recall_at_5']['value']
+          assert observed['recall_at_10']['value'] >= expected['recall_at_10']['value']
+          assert observed['citation_provenance_integrity']['rate'] == 1
+          assert observed['company_year_leakage']['count'] == 0
+          assert observed['incorrect_currency_candidates'] <= expected['incorrect_currency_candidates']
+          print('Phase 4 synthetic quality gate passed')
+          PY
