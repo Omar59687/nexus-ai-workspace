@@ -84,8 +84,8 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
         self.assertEqual(report["gold"]["amount_million_sar"], 19642)
         self.assertEqual(report["candidate_pages"], [114])
         self.assertEqual(report["candidate_chunk_count"], 1)
-        self.assertEqual(report["technical_status"], "CANDIDATES_RETRIEVED")
-        self.assertEqual(report["financial_truth_status"], "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_RETRIEVAL_UNVERIFIED")
+        self.assertEqual(report["legacy_same_page_word_match_status"], "CANDIDATES_RETRIEVED")
+        self.assertEqual(report["financial_truth_status"], "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_AUTOMATIC_ROW_ASSOCIATION_UNVERIFIED")
         self.assertNotIn(evidence, json.dumps(report, ensure_ascii=False))
 
     def test_verified_pdf_pages_pass_evidence_gate_despite_reordered_arabic_label(self):
@@ -113,6 +113,45 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
         self.assertTrue(report["languages"][0]["verified_gold_page_at_10"])
         self.assertTrue(report["languages"][1]["verified_gold_page_at_10"])
         self.assertFalse(report["languages"][0]["relevant_candidate_page_at_10"])
+
+    def test_verified_page_without_exact_numeric_chunk_is_not_full_citation_pass(self):
+        pages = (
+            ExtractedPage(140, "19,641,705 2025"),
+            ExtractedPage(142, "19,641,705 2025"),
+        )
+        indexed = SimpleNamespace(
+            document=SimpleNamespace(pages=pages),
+            chunks=(
+                _row("other values", 140, "only-context"),
+                _row("other values", 142, "another-context"),
+            ),
+        )
+        result = assess_evidence(
+            indexed, (_retrieval(140, "only-context"), _retrieval(142, "another-context"))
+        )
+        self.assertTrue(result["acceptance_gates"]["verified_source_pages_retrieved_bilingually_at_10"])
+        self.assertFalse(result["acceptance_gates"]["exact_amount_in_cited_chunk_bilingually_at_10"])
+        self.assertEqual(result["acceptance_summary"],
+                         "VERIFIED_PAGES_RETRIEVED_BUT_CITED_AMOUNT_UNVERIFIED")
+        self.assertFalse(result["acceptance_gates"]["financial_row_association_machine_verified"])
+
+    def test_verified_page_and_exact_number_in_cited_chunk_still_need_row_check(self):
+        pages = (
+            ExtractedPage(140, "19,641,705 2025"),
+            ExtractedPage(142, "19,641,705 2025"),
+        )
+        indexed = SimpleNamespace(
+            document=SimpleNamespace(pages=pages),
+            chunks=(_row(pages[0].text, 140, "gold-140"),
+                    _row(pages[1].text, 142, "gold-142")),
+        )
+        result = assess_evidence(
+            indexed, (_retrieval(140, "gold-140"), _retrieval(142, "gold-142"))
+        )
+        self.assertTrue(result["acceptance_gates"]["exact_amount_in_cited_chunk_bilingually_at_10"])
+        self.assertEqual(result["acceptance_summary"],
+                         "CITED_EXACT_AMOUNT_BILINGUALLY_RETRIEVED_NEEDS_ROW_ASSOCIATION")
+        self.assertFalse(result["acceptance_gates"]["financial_row_association_machine_verified"])
 
     def test_amount_present_on_verified_pages_is_not_a_retrieval_pass(self):
         pages = (
@@ -144,7 +183,7 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
             indexed, (_retrieval(52, "amount-chunk", preceding=10),
                       _retrieval(52, "amount-chunk"))
         )
-        self.assertEqual(report["technical_status"], "RETRIEVAL_OR_EXTRACTION_GAP")
+        self.assertEqual(report["legacy_same_page_word_match_status"], "RETRIEVAL_OR_EXTRACTION_GAP")
         self.assertFalse(report["languages"][0]["relevant_candidate_page_at_10"])
 
     def test_number_without_metric_is_not_a_candidate(self):
@@ -156,7 +195,7 @@ class MobilyRealRevenueAcceptanceTests(unittest.TestCase):
             indexed, (_retrieval(50, "numeric"), _retrieval(50, "numeric"))
         )
         self.assertEqual(result["candidate_pages"], [])
-        self.assertEqual(result["technical_status"], "RETRIEVAL_OR_EXTRACTION_GAP")
+        self.assertEqual(result["legacy_same_page_word_match_status"], "RETRIEVAL_OR_EXTRACTION_GAP")
 
     def test_report_is_utf8_outside_source_directory(self):
         with tempfile.TemporaryDirectory() as root:
