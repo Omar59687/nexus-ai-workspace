@@ -32,8 +32,46 @@ class CollectionExtractionTests(unittest.TestCase):
         self.assertEqual(results["status"], "PASS")
         self.assertEqual(results["extracted_count"], 2)
         self.assertEqual(results["documents"][0]["text_pages"], 1)
+        self.assertGreater(results["documents"][0]["chunk_count"], 0)
+        self.assertEqual(len(results["documents"][0]["chunk_identity_digest"]), 64)
         self.assertEqual(results["scope"]["embeddings"], "NONE")
         self.assertNotIn("إيرادات الشركة", json.dumps(results, ensure_ascii=False))
+
+    def test_chunk_identity_is_stable_and_no_source_text_is_returned(self):
+        (self.root / "financial.md").write_text(
+            "# FY2025 Revenue\\n\\nThe revenue was 123 million.\\n",
+            encoding="utf-8"
+        )
+        first = extract_collection(self.root, [item("financial.md")])
+        second = extract_collection(self.root, [item("financial.md")])
+        a = first["documents"][0]
+        b = second["documents"][0]
+        self.assertEqual(a["chunk_identity_digest"], b["chunk_identity_digest"])
+        self.assertEqual(a["chunk_count"], b["chunk_count"])
+        self.assertEqual(a["chunker_fingerprint"], b["chunker_fingerprint"])
+        self.assertNotIn("The revenue", json.dumps(first))
+
+    def test_invalid_chunk_source_offsets_fail_closed(self):
+        (self.root / "a.txt").write_text("Revenue 100", encoding="utf-8")
+        from unittest.mock import patch
+        class BrokenChunker:
+            fingerprint = "x"
+            def chunk(self, extraction, **kwargs):
+                from types import SimpleNamespace
+                return (SimpleNamespace(
+                    offsets_reliable=True,
+                    page_number=None,
+                    start_char=0,
+                    end_char=3,
+                    text="invalid",
+                    chunk_id="id",
+                ),)
+        with patch("nexus_ai.documents.collection_extraction.SourceAwareChunker",
+                   return_value=BrokenChunker()):
+            result = extract_collection(self.root, [item("a.txt")])
+        self.assertEqual(result["status"], "PARTIAL")
+        self.assertEqual(result["blocked_count"], 1)
+        self.assertEqual(result["documents"][0]["reason"], "extraction_failed_or_no_text")
 
     def test_duplicate_avoids_second_extraction(self):
         (self.root / "one.txt").write_text("revenue 42", encoding="utf-8")
