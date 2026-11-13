@@ -35,6 +35,16 @@ class CollectionPreflightTests(unittest.TestCase):
         self.assertEqual(result["scope"]["model_calls"], "NONE")
         self.assertEqual(result["scope"]["directory_crawling"], "NONE")
 
+    def test_arabic_company_labels_are_supported(self):
+        (self.root / "mobily.pdf").write_bytes(b"trusted fixture")
+        result = preflight_collection(
+            self.root, [doc("mobily.pdf", company="شركة اتحاد اتصالات موبايلي")]
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(
+            result["documents"][0]["company"], "شركة اتحاد اتصالات موبايلي"
+        )
+
     def test_missing_and_oversized_files_are_isolated(self):
         (self.root / "small.pdf").write_bytes(b"12345")
         (self.root / "huge.pdf").write_bytes(b"123456789")
