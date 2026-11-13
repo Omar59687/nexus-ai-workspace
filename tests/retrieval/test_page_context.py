@@ -58,7 +58,7 @@ class PageContextTests(unittest.TestCase):
         chunks = tuple(_chunk(page, text) for page, text in texts.items())
         self.repo = Repo(SimpleNamespace(
             document=SimpleNamespace(
-                workspace_id="authorized", version_id="version",
+                workspace_id="authorized", document_id="document", version_id="version",
                 content_sha256="sha256", source_path="report.pdf", pages=pages,
             ), chunks=chunks,
         ))
@@ -110,7 +110,7 @@ class PageContextTests(unittest.TestCase):
         chunks = source.chunks + tuple(_chunk(page.page_number, page.text) for page in extras)
         self.repo.indexed = SimpleNamespace(
             document=SimpleNamespace(
-                workspace_id="authorized", version_id="version",
+                workspace_id="authorized", document_id="document", version_id="version",
                 content_sha256="sha256", source_path="report.pdf", pages=pages,
             ), chunks=chunks,
         )
