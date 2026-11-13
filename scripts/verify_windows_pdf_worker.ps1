@@ -15,8 +15,12 @@ try {
     if ($existingPythonPath) {
         $env:PYTHONPATH += [System.IO.Path]::PathSeparator + $existingPythonPath
     }
-    $pythonCommand = Get-Command python -CommandType Application -ErrorAction Stop
-    $pythonExecutable = $pythonCommand.Source
+    $pythonCommand = Get-Command python -CommandType Application -All -ErrorAction Stop |
+        Select-Object -First 1
+    if ($null -eq $pythonCommand -or [string]::IsNullOrWhiteSpace($pythonCommand.Source)) {
+        throw "No Python application was found on PATH."
+    }
+    $pythonExecutable = [System.IO.Path]::GetFullPath($pythonCommand.Source)
     $pythonRuntime = & $pythonExecutable -c "import sys; print(sys.executable)"
     if ($LASTEXITCODE -ne 0) {
         throw "Python runtime discovery failed."

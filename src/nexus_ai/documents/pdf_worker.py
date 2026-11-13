@@ -361,10 +361,11 @@ def _worker(argv: list[str]) -> int:
             text = page.extract_text()
             if text is None:
                 text = ""
-                warnings.append(f"page {number} produced no extractable text")
             if not isinstance(text, str):
                 _write_result({"error": "corrupt"})
                 return 2
+            if not text.strip():
+                warnings.append(f"page {number} produced no extractable text")
             if len(text) > args.max_page_chars:
                 _write_result({"error": "page_char_limit"})
                 return 2

@@ -123,7 +123,7 @@ class WindowsPdfWorkerTests(unittest.TestCase):
         result = service.ingest("windows-pdf-test", "owner-document.pdf")
         active = repository.get_active("windows-pdf-test", result.document_id)
         self.assertEqual(active.document.source_path, "owner-document.pdf")
-        self.assertEqual(active.document.content_sha256, result.source_sha256)
+        self.assertEqual(active.document.content_sha256, result.content_sha256)
         self.assertEqual([page.page_number for page in active.document.pages], [1])
         self.assertIn("Trusted local source has 42 units", active.document.pages[0].text)
 

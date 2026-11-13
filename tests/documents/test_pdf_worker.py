@@ -104,6 +104,50 @@ class IsolatedPdfWorkerTests(unittest.TestCase):
 
 
 class PdfWorkerConfigurationTests(unittest.TestCase):
+    def test_blank_and_whitespace_pages_warn_but_preserve_extracted_text(self):
+        import io
+        import json
+        import types
+        from unittest.mock import patch
+        from nexus_ai.documents.pdf_worker import _worker
+
+        class FakePage:
+            def __init__(self, text):
+                self.text = text
+
+            def extract_text(self):
+                return self.text
+
+        class FakeReader:
+            is_encrypted = False
+
+            def __init__(self, source, strict=True):
+                self.pages = [FakePage(""), FakePage(" \n\t"), FakePage("source")]
+
+        fake_pypdf = types.ModuleType("pypdf")
+        fake_pypdf.PdfReader = FakeReader
+        fake_pypdf.__version__ = "test"
+        fake_stdin = types.SimpleNamespace(buffer=io.BytesIO(b"generated"))
+        fake_stdout = io.StringIO()
+        args = [
+            "--worker", "--max-pages", "5", "--max-page-chars", "100",
+            "--max-total-chars", "100", "--memory-limit-bytes", "1024",
+            "--cpu-limit-seconds", "1",
+        ]
+        with patch.dict(sys.modules, {"pypdf": fake_pypdf}), \
+             patch("nexus_ai.documents.pdf_worker._apply_worker_limits"), \
+             patch("nexus_ai.documents.pdf_worker.sys.stdin", fake_stdin), \
+             patch("nexus_ai.documents.pdf_worker.sys.stdout", fake_stdout):
+            status = _worker(args)
+
+        payload = json.loads(fake_stdout.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual([page["text"] for page in payload["pages"]], ["", " \n\t", "source"])
+        self.assertEqual(payload["warnings"], [
+            "page 1 produced no extractable text",
+            "page 2 produced no extractable text",
+        ])
+
     def test_invalid_limits_are_rejected(self):
         for kwargs in (
             {"max_input_bytes": 0},
