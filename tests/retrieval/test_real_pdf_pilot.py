@@ -17,6 +17,8 @@ class RealPdfPilotTests(unittest.TestCase):
             pdf = root / "trusted.pdf"
             pdf.write_bytes(b"%PDF-1.4\n")
             self.assertEqual(validate_pdf_path(str(pdf)), pdf.resolve())
+            self.assertEqual(validate_pdf_path('  "' + str(pdf) + '"  '), pdf.resolve())
+            self.assertEqual(validate_pdf_path(str(pdf) + "  "), pdf.resolve())
             for candidate in ("relative.pdf", str(root), str(root / "missing.pdf"), str(root / "note.txt")):
                 with self.subTest(candidate=candidate), self.assertRaises(ValueError):
                     validate_pdf_path(candidate)
