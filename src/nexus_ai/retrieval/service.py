@@ -93,7 +93,7 @@ class RetrievalService:
                 raise ValueError("company_year_filter must be a validated CompanyYearFilter")
             if self.company_metadata is None:
                 raise MetadataIntegrityError("company/year metadata filtering is not configured")
-            _, selected = self.company_metadata.resolve(
+            metadata_snapshot, selected = self.company_metadata.resolve(
                 self.repository, workspace_id=workspace_id, query_filter=company_year_filter,
             )
             selected_by_id = {row.document_id: row for row in selected}
@@ -119,11 +119,20 @@ class RetrievalService:
                 selected_by_id = page_scoped
             rows_factory = lambda: _iter_collection_active(
                 self.repository, workspace_id, filters, selected_by_id,
+                metadata_catalog=self.company_metadata,
+                collection_id=metadata_snapshot.collection_id,
+                revision_id=metadata_snapshot.revision_id,
             )
         if strategy == "windowed_e5":
             results = self._windowed_e5_stream(query, rows_factory(), workspace_id, filters, top_k)
         else:
             results = self._bm25_stream(query, rows_factory, workspace_id, filters, top_k)
+        if company_year_filter is not None:
+            current = self.company_metadata.get(workspace_id, metadata_snapshot.collection_id)
+            if current.revision_id != metadata_snapshot.revision_id:
+                raise MetadataIntegrityError(
+                    "collection metadata changed during retrieval; retry with a fresh snapshot"
+                )
         return RetrievalResponse(
             workspace_id=workspace_id,
             strategy=strategy,
@@ -447,16 +456,28 @@ def _iter_active(repository, workspace_id, filters):
     return iter(repository.list_active(workspace_id, filters))
 
 
-def _iter_collection_active(repository, workspace_id, filters, expected_members):
+def _iter_collection_active(
+    repository, workspace_id, filters, expected_members, *,
+    metadata_catalog, collection_id, revision_id,
+):
     """Yield only the selected, version-bound collection members.
 
     Recheck identities during each retrieval pass so a concurrent replacement
     cannot cause stale metadata to authorize a different active source version.
     """
+    def assert_revision():
+        current = metadata_catalog.get(workspace_id, collection_id)
+        if current.revision_id != revision_id:
+            raise MetadataIntegrityError(
+                "collection metadata changed during retrieval; retry with a fresh snapshot"
+            )
+
+    assert_revision()
     source = _iter_active(repository, workspace_id, filters)
     seen: set[str] = set()
     try:
         for indexed in source:
+            assert_revision()
             document_id = indexed.document.document_id
             metadata = expected_members.get(document_id)
             if metadata is None:
@@ -473,10 +494,12 @@ def _iter_collection_active(repository, workspace_id, filters, expected_members)
                 )
             seen.add(document_id)
             yield indexed
+            assert_revision()
     finally:
         close = getattr(source, "close", None)
         if close is not None:
             close()
+    assert_revision()
     if seen != set(expected_members):
         raise MetadataIntegrityError("collection metadata is stale or incomplete; refresh the collection snapshot")
 
