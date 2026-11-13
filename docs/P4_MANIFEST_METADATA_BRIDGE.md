@@ -85,3 +85,28 @@ Do not run the real-PDF or Ollama pilot for this acceptance gate.
   end-to-end retrieval performance is made by this slice.
 - Review and test the separate durable-indexing branch before any integration
   into `main`.
+
+## Filter enforcement and concurrent metadata changes
+
+Applications that require a company/year restriction can construct
+`AuthorizedCollectionRetriever` from
+`nexus_ai.retrieval.collection_query`, supplying trusted workspace and
+collection identifiers. Its `retrieve` method **requires** a company or
+financial year selector; the wrapper cannot silently call unfiltered retrieval.
+The currently lower-level `RetrievalService.retrieve` method still supports
+unfiltered calls for other application paths. Do not expose it directly as a
+company-scoped public endpoint.
+
+During a collection-filtered query the retrieval service now pins the catalog
+revision and checks it throughout the lexical/vector scan and immediately
+before returning. A concurrent metadata revision change raises
+`MetadataIntegrityError` rather than returning results under an obsolete
+company/year assignment. This is a fail-closed check, not a database-level
+serializable transaction: durable cross-store consistency remains future work.
+
+Focused tests for this extension:
+```powershell
+& "C:\\AI Projects\\Nexus AI\\.venv\\Scripts\\python.exe" -m pytest -q `
+  tests/retrieval/test_company_year_metadata.py `
+  tests/retrieval/test_collection_registration.py
+```
