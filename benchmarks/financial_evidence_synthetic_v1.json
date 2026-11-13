@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "dataset_id": "nexus-financial-evidence-synthetic",
+  "dataset_version": "1.0.0",
+  "synthetic": true,
+  "description": "Deterministic bilingual fixtures for financial passage retrieval, metadata scope, and citation checks. These are invented test records, not financial statements or benchmark evidence.",
+  "companies": {
+    "nexa": ["Nexa Telecom", "شركة نيكسـا للاتصالات", "نيكسا"],
+    "cedar_energy": ["Cedar Energy", "Cedar Energy Group", "سيدر للطاقة"],
+    "atlas": ["Atlas Holdings", "أطلس القابضة"]
+  },
+  "documents": [
+    {
+      "path": "nexa_2025_comparative_ar.txt",
+      "company_id": "nexa",
+      "identity_company_id": "nexa",
+      "financial_year": 2025,
+      "identity_year": 2025,
+      "language": "ar",
+      "pages": [
+        "شركة نيكسـا للاتصالات | التقرير السنوي المدقق | السنة المالية 2025\nقائمة الدخل المقارنة: البند، السنة، القيمة، العملة\nالإيرادات (Revenue) | 2025 | 88 مليون (88 million) | ريال سعودي (SAR)\nالإيرادات (Revenue) | 2024 | 77 مليون (77 million) | ريال سعودي (SAR)",
+        "شركة نيكسـا للاتصالات | السنة المالية 2025\nمبيعات التصدير (Export sales) | 2025 | 88 مليون (88 million) | دولار أمريكي (USD)",
+        "شركة نيكسـا للاتصالات | السنة المالية 2025\nملاحظة تحويل: 88 مليون دولار أمريكي (USD) توضيحية فقط وليست قيمة الإيرادات المعلنة.\nConversion note only: 88 million USD is illustrative and is not reported revenue."
+      ]
+    },
+    {
+      "path": "nexa_2025_restatement_en.txt",
+      "company_id": "nexa",
+      "identity_company_id": "nexa",
+      "financial_year": 2025,
+      "identity_year": 2025,
+      "language": "en",
+      "pages": [
+        "Nexa Telecom | 2025 audited correction\nCorrected revenue was 89 million Saudi riyals (SAR). This conflicts with a separate synthetic summary reporting 88 million SAR."
+      ]
+    },
+    {
+      "path": "cedar_energy_2025_en.txt",
+      "company_id": "cedar_energy",
+      "identity_company_id": "cedar_energy",
+      "financial_year": 2025,
+      "identity_year": 2025,
+      "language": "en",
+      "pages": [
+        "Cedar Energy annual report | financial year 2025\nRevenue was 900 million Saudi riyals (SAR)."
+      ]
+    },
+    {
+      "path": "atlas_2024_en.txt",
+      "company_id": "atlas",
+      "identity_company_id": "atlas",
+      "financial_year": 2024,
+      "identity_year": 2024,
+      "language": "en",
+      "pages": [
+        "Atlas Holdings annual report | financial year 2024\nRevenue: 12.5 million euros (EUR).",
+        "Atlas Holdings | 2024\nEarnings per share (EPS) was not disclosed in this synthetic report."
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "nexa_revenue_2025_ar_ar",
+      "query": "ما إيرادات نيكسا لعام 2025 بالريال السعودي؟",
+      "query_language": "ar",
+      "company": "نيكسا",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "nexa_2025_comparative_ar.txt", "page_number": 1, "fact_year": 2025, "metric_aliases": ["الإيرادات", "revenue"], "amount_aliases": ["88 مليون", "88 million"], "currency_aliases": ["ريال سعودي", "SAR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "nexa_comparative_2024_en_ar",
+      "query": "What revenue did Nexa Telecom report for the comparative 2024 year in its 2025 annual report?",
+      "query_language": "en",
+      "company": "Nexa Telecom",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "nexa_2025_comparative_ar.txt", "page_number": 1, "fact_year": 2024, "metric_aliases": ["الإيرادات", "revenue"], "amount_aliases": ["77 مليون", "77 million"], "currency_aliases": ["ريال سعودي", "SAR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "cedar_energy_revenue_2025_ar_en",
+      "query": "ما إيرادات سيدر للطاقة في 2025؟",
+      "query_language": "ar",
+      "company": "سيدر للطاقة",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "cedar_energy_2025_en.txt", "page_number": 1, "fact_year": 2025, "metric_aliases": ["revenue"], "amount_aliases": ["900 million"], "currency_aliases": ["Saudi riyals", "SAR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "nexa_revenue_2025_en_ar",
+      "query": "Nexa Telecom 2025 reported revenue in Saudi riyals SAR",
+      "query_language": "en",
+      "company": "Nexa Telecom",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "nexa_2025_comparative_ar.txt", "page_number": 1, "fact_year": 2025, "metric_aliases": ["الإيرادات", "revenue"], "amount_aliases": ["88 مليون", "88 million"], "currency_aliases": ["ريال سعودي", "SAR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "atlas_revenue_2024_en_en",
+      "query": "Atlas Holdings 2024 revenue amount in euros",
+      "query_language": "en",
+      "company": "Atlas Holdings",
+      "financial_year": 2024,
+      "expected_evidence": [
+        {"path": "atlas_2024_en.txt", "page_number": 1, "fact_year": 2024, "metric_aliases": ["revenue"], "amount_aliases": ["12.5 million"], "currency_aliases": ["euros", "EUR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "nexa_conflicting_revenue_2025_en_en",
+      "query": "Compare conflicting Nexa Telecom 2025 annual revenue values from the summary and corrected report",
+      "query_language": "en",
+      "company": "Nexa Telecom",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "nexa_2025_comparative_ar.txt", "page_number": 1, "fact_year": 2025, "metric_aliases": ["الإيرادات", "revenue"], "amount_aliases": ["88 مليون", "88 million"], "currency_aliases": ["ريال سعودي", "SAR"], "kind": "value"},
+        {"path": "nexa_2025_restatement_en.txt", "page_number": 1, "fact_year": 2025, "metric_aliases": ["revenue"], "amount_aliases": ["89 million"], "currency_aliases": ["Saudi riyals", "SAR"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "nexa_export_currency_2025_en_en",
+      "query": "Nexa Telecom 2025 export sales amount reported in US dollars USD",
+      "query_language": "en",
+      "company": "Nexa Telecom",
+      "financial_year": 2025,
+      "expected_evidence": [
+        {"path": "nexa_2025_comparative_ar.txt", "page_number": 2, "fact_year": 2025, "metric_aliases": ["مبيعات التصدير", "export sales"], "amount_aliases": ["88 مليون", "88 million"], "currency_aliases": ["دولار أمريكي", "USD"], "kind": "value"}
+      ]
+    },
+    {
+      "case_id": "atlas_eps_missing_2024_en_en",
+      "query": "What was Atlas Holdings earnings per share EPS in 2024?",
+      "query_language": "en",
+      "company": "Atlas Holdings",
+      "financial_year": 2024,
+      "expected_evidence": [
+        {"path": "atlas_2024_en.txt", "page_number": 2, "fact_year": 2024, "metric_aliases": ["earnings per share", "EPS"], "absence_aliases": ["was not disclosed"], "kind": "absence"}
+      ]
+    }
+  ]
+}
