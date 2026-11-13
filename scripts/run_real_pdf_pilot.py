@@ -22,7 +22,26 @@ class PilotStageError(RuntimeError):
     def __init__(self, stage: str, cause: Exception) -> None:
         self.stage = stage
         self.reason_code = _safe_reason_code(cause)
+        self.origin = _safe_source_origin(cause)
         super().__init__(f"{stage}:{self.reason_code}")
+
+
+def _safe_source_origin(exc: Exception) -> str | None:
+    """Report only a fixed code-module path and line, not private PDF details."""
+    allowed_prefixes = ("nexus_ai.", "scripts.run_real_pdf_pilot")
+    cursor = exc.__traceback__
+    result = None
+    while cursor is not None:
+        frame = cursor.tb_frame
+        module = frame.f_globals.get("__name__", "")
+        if isinstance(module, str) and (
+            module == "scripts.run_real_pdf_pilot"
+            or module.startswith("nexus_ai.")
+        ):
+            # Module names and line numbers are source identifiers, not PDF paths.
+            result = f"{module}:{cursor.tb_lineno}"
+        cursor = cursor.tb_next
+    return result
 
 
 def _safe_reason_code(exc: Exception) -> str:
@@ -194,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
             "error_type": type(exc).__name__,
             "failed_stage": exc.stage if isinstance(exc, PilotStageError) else "pilot_setup",
             "reason_code": exc.reason_code if isinstance(exc, PilotStageError) else "runtime_error_unclassified",
+            "failure_origin": exc.origin if isinstance(exc, PilotStageError) else None,
             "not_an_accuracy_benchmark": True,
             "side_effects": {"database": "NONE", "deployment": "NONE", "index": "MEMORY_ONLY"},
         }
