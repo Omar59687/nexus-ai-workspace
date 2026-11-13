@@ -38,25 +38,50 @@ Do not claim this acceptance gate passed until the workflow reports green.
 A CI failure is a blocker requiring a bounded correction, not an invitation
 to bypass or weaken the checks.
 
-## Remaining explicit acceptance boundaries
+## Verified real-PDF engineering gate (owner-run, 13 Nov 2026)
 
-- **Real Arabic financial fact:** page 114 extracted source text indicates an
-  audit discussion around 19.6 billion for 2025, but the correct amount and
-  currency have not been independently checked against the consolidated
-  financial statement; page-level lexical relevance does not prove correct
-  row/column association. The earlier "إيرادات" missing-anchor result could
-  arise from PowerShell Unicode argument handling or Arabic variants. Latest
-  diagnostic code supports UTF-8 JSON anchors and Arabic diacritics/alef forms;
-  local real-PDF retest is needed.
-- **Application authorization:** trusted, authenticated principal-to-workspace
-  mapping must be enforced at every route invoking retrieval or indexing.
-- **Migration:** candidate DDL is not a reviewed/reversible production
-  migration. No production schema changes authorized.
-- **Scale:** 150-document limits and synthetic retrieval recall are not
-  real-PDF workload or financial accuracy benchmarks.
+The isolated source-only pipeline indexed the real Mobily FY2025 Arabic annual
+report: 142 pages, 2,139 chunks. Owner visual inspection of original PDF
+tables identified the precise FY2025 revenue **19,641,705 SAR thousands** in
+PDF pages **140 and 142**, with 2024 comparison **18,206,447 SAR thousands**.
+
+On commit `a688220c34683b3beb124b6a45935a773defacf8`, the real local
+Arabic and English queries both retrieved visually verified gold pages in
+top-10 after bounded adjacent-page context expansion, without inspecting gold
+labels during search. Arabic top-five pages included **140 and 142**. English
+had gold pages in top-10 (not top-5). The source-PDF amount extraction also
+passed for both gold pages.
+
+**These results establish bilingual gold-PAGE retrieval, not necessarily
+a cited chunk that independently contains the amount or a machine-proven
+metric/year/currency/row link.** The newer `acceptance_gates` distinguishes
+page retrieval, exact amount in returned chunk, and automatic row association.
+Automatic row association is deliberately not marked as passed.
+
+A separate legacy same-page Arabic keyword check remains invalid for
+visually confirmed table layouts: the numerical value survives pypdf, but
+the Arabic revenue label is not co-detected on those extracted page texts.
+Do not use that obsolete cooccurrence status as the overall Phase 4 verdict.
+
+## Remaining boundaries and deployment prerequisites
+
+- Exact numerical **citation-span** presence and automatic table-row
+  association remain a separate quality gate. Owner's original screenshots
+  confirm the real financial facts; NLP/table extraction does not yet fully
+  reproduce their structural associations.
+- **Application authorization:** trusted authenticated-principal-to-workspace
+  binding must be enforced at every route invoking indexing or retrieval.
+  Source workspace identifiers only scope database queries.
+- **Production migration:** DDL remains a proposal, not reviewed reversible
+  Alembic migration. No production/hosted schema changes authorized.
+- **Scale:** configured 150-document support does not prove a 150-real-PDF
+  workload, benchmark latency, or end-to-end answer accuracy.
+- **Model-generated answers:** no LLM/embedding provider was invoked in this
+  Phase 4 model-free acceptance; grounded answer generation is not tested.
 
 **Phase 4 closure recommendation:** accept the *engineering integration
-candidate* only after CI PostgreSQL tests and owner-held real-PDF acceptance
-pass. Keep production deployment and a large-scale 150-file pilot as separate,
+candidate* after the reproducible CI PostgreSQL gate and bilingual gold-page
+retrieval pass; keep exact citation-value/row-association and application
+production-readiness as explicit follow-on gates. Keep production deployment and a large-scale 150-file pilot as separate,
 explicitly named gates. No merge to `main` or production writes without owner
 approval.
