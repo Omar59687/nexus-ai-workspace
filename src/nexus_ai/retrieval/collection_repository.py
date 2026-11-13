@@ -253,7 +253,7 @@ class PostgresCollectionIndexRepository:
                     cursor.execute(
                         """INSERT INTO nexus_collection_documents (workspace_id, document_id, source_path)
                            VALUES (%s, %s, %s)
-                           ON CONFLICT (workspace_id, document_id) DO NOTHING""",
+                           ON CONFLICT DO NOTHING""",
                         (doc.workspace_id, doc.document_id, doc.source_path),
                     )
                     cursor.execute(
