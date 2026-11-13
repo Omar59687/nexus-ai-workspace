@@ -71,10 +71,18 @@ def extract_collection(
         digest = hashlib.sha256(content).hexdigest()
         total_bytes += len(content)
         if digest in seen_digests:
-            row.update(
-                status="duplicate", sha256=digest,
-                duplicate_of=seen_digests[digest], bytes=len(content),
-            )
+            prior_path, prior_company, prior_year = seen_digests[digest]
+            if (prior_company, prior_year) != (entry["company"], entry["year"]):
+                # Same bytes labelled as two companies/periods is a metadata
+                # collision, not a legitimate second annual report.
+                row.update(
+                    status="blocked", reason="duplicate_content_metadata_conflict",
+                )
+            else:
+                row.update(
+                    status="duplicate", sha256=digest,
+                    duplicate_of=prior_path, bytes=len(content),
+                )
             rows.append(row)
             continue
         # Only successful extraction can establish a reusable duplicate.
@@ -109,7 +117,7 @@ def extract_collection(
                     )
                     if source is None or source[chunk.start_char:chunk.end_char] != chunk.text:
                         raise ValueError("invalid source chunk provenance")
-            seen_digests[digest] = path
+            seen_digests[digest] = (path, entry["company"], entry["year"])
             row.update(
                 status="extracted",
                 sha256=digest,
