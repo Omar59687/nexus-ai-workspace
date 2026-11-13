@@ -18,8 +18,8 @@ The service:
 4. Extracts PDF page/text coverage, UTF-8 Markdown and TXT.
 5. Records company, year, content digest, file bytes, extracted page count,
    nonblank page count, character count, extractor identity and warning count.
-6. Skips identical byte-content duplicates within a run.
-7. Isolates failed documents with safe status codes, continuing the batch.
+6. Builds an ephemeral source-aware chunk preview (count, deterministic identity\n   digest and chunker fingerprint); verifies source-character offsets before\n   discarding text. No embeddings, vector storage, or persisted chunks.\n7. Skips identical byte-content duplicates within a run.
+8. Isolates failed documents with safe status codes, continuing the batch.
 
 No source text is included in the output JSON. **No permanent index is built**:
 extracted text is discarded after coverage statistics are recorded. This is not
