@@ -48,7 +48,7 @@ def _safe_reason_code(exc: Exception) -> str:
     from nexus_ai.retrieval.answering import AnswerOutputRejectedError
 
     if isinstance(exc, AnswerOutputRejectedError):
-        return "answer_rejected"
+        return exc.reason_code if exc.reason_code == "citation_id_leaked_into_answer" else "answer_rejected"
     # Exact messages emitted by our own bounded ingestion controls; do not
     # leak arbitrary third-party/PDF/provider error strings into reports.
     if isinstance(exc, ValueError):
@@ -152,7 +152,10 @@ def run_pilot(pdf: Path, question: str) -> dict[str, object]:
         num_predict=384,
         timeout_seconds=client.timeout_seconds,
     )
-    answerer = GroundedAnswerService(adapter=adapter, default_model=client.default_model)
+    answerer = GroundedAnswerService(
+        adapter=adapter, default_model=client.default_model,
+        retry_citation_id_echo=True,
+    )
     try:
         answered = answerer.answer(question, citations)
     except Exception as exc:
