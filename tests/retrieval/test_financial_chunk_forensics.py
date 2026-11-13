@@ -58,6 +58,21 @@ class FinancialChunkForensicsTests(unittest.TestCase):
         self.assertTrue(result["all_anchors_present_on_page"])
         self.assertTrue(result["all_anchors_share_chunk"])
 
+    def test_arabic_alef_tatweel_and_vowel_marks_are_matching_variants(self):
+        result = self._inspect(
+            "إِيرَادَات المجموعة\\n"
+            "مبلغ 19.6 مليار\\n"
+            "السنة 2025\\n",
+            ["إيرادات", "19.6", "2025"],
+        )
+        self.assertTrue(result["all_anchors_present_on_page"])
+        self.assertTrue(result["all_anchors_share_chunk"])
+        variants = self._inspect(
+            "ايرادات المجموعة\\nمبلغ 19.6 مليار\\nالسنة 2025\\n",
+            ["إيرادات", "19.6", "2025"],
+        )
+        self.assertTrue(variants["all_anchors_present_on_page"])
+
     def test_missing_currency_is_not_silently_inferred(self):
         result = self._inspect(
             "إيرادات 19.6 مليار للسنة المنتهية في 2025\n",
