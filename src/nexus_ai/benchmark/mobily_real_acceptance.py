@@ -128,6 +128,12 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
         queries.append({
             "verified_gold_page_at_5": any(row["rank"] <= 5 for row in verified_hits),
             "verified_gold_page_at_10": any(row["rank"] <= 10 for row in verified_hits),
+            "precise_amount_in_cited_chunk_at_5": any(
+                row["rank"] <= 5 and row["exact_amount_in_cited_chunk"] for row in verified_hits
+            ),
+            "precise_amount_in_cited_chunk_at_10": any(
+                row["rank"] <= 10 and row["exact_amount_in_cited_chunk"] for row in verified_hits
+            ),
             "verified_gold_page_hits": verified_hits,
             "language": label, "retrieval_status": response.status,
             "relevant_candidate_page_at_5": any(row["rank"] <= 5 for row in relevant),
@@ -162,6 +168,31 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
             all(row["verified_gold_page_at_10"] for row in queries)
             else "VERIFIED_GOLD_RETRIEVAL_GAP"
         ),
+        "acceptance_gates": {
+            "verified_source_pages_retrieved_bilingually_at_10": (
+                all(verified_pages.values()) and
+                all(row["verified_gold_page_at_10"] for row in queries)
+            ),
+            "exact_amount_in_cited_chunk_bilingually_at_10": (
+                all(verified_pages.values()) and
+                all(row["precise_amount_in_cited_chunk_at_10"] for row in queries)
+            ),
+            "financial_row_association_machine_verified": False,
+            "unstructured_arabic_revenue_label_detected_on_gold_page": (
+                all(page in candidate_pages for page in VISUALLY_VERIFIED_REVENUE_PAGES)
+            ),
+        },
+        "acceptance_summary": (
+            "CITED_EXACT_AMOUNT_BILINGUALLY_RETRIEVED_NEEDS_ROW_ASSOCIATION"
+            if all(verified_pages.values()) and all(
+                row["precise_amount_in_cited_chunk_at_10"] for row in queries
+            ) else
+            "VERIFIED_PAGES_RETRIEVED_BUT_CITED_AMOUNT_UNVERIFIED"
+            if all(verified_pages.values()) and all(
+                row["verified_gold_page_at_10"] for row in queries
+            ) else
+            "VERIFIED_GOLD_PAGE_RETRIEVAL_GAP"
+        ),
         "candidate_pages": candidate_pages[:50],
         "amount_pages": amount_pages[:50],
         "metric_pages_count": len(metric_pages),
@@ -174,13 +205,13 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
         "candidate_page_count": len(candidate_pages),
         "candidate_chunk_count": len(candidate_chunks),
         "languages": queries,
-        "technical_status": (
+        "legacy_same_page_word_match_status": (
             "CANDIDATES_RETRIEVED" if candidate_pages and
             all(row["relevant_candidate_page_at_10"] for row in queries)
             else "RETRIEVAL_OR_EXTRACTION_GAP"
         ),
         "financial_truth_status": (
-            "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_RETRIEVAL_UNVERIFIED"
+            "ORIGINAL_PDF_TABLE_VISUALLY_VERIFIED_AUTOMATIC_ROW_ASSOCIATION_UNVERIFIED"
         ),
         "limitations": [
             "A page may contain the number in a different table row or year.",
@@ -190,6 +221,7 @@ def assess_evidence(indexed, arabic_and_english_results) -> dict:
             "A rounded millions value and a precise thousands value are distinct reporting precisions; a matching amount does not establish the page's unit.",
             "Visual human annotations are independent of extraction but not pinned to this PDF hash; verify the document edition when reusing them.",
             "Verified page retrieval is measured separately from raw page-level cooccurrence; do not claim success from presence of a gold number alone.",
+            "A matching amount inside a cited chunk is only lexical numerical evidence; row, year, and currency associations are not automatically established.",
         ],
     }
 
