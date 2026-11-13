@@ -204,7 +204,7 @@ class PostgresDocumentIndex(DocumentIndexRepository):
                     """INSERT INTO nexus_rag_documents
                        (workspace_id, document_id, source_path)
                        VALUES (%s, %s, %s)
-                       ON CONFLICT (workspace_id, document_id) DO NOTHING""",
+                       ON CONFLICT DO NOTHING""",
                     (document.workspace_id, document.document_id, document.source_path),
                 )
                 cursor.execute(
