@@ -464,7 +464,7 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         duplicate_path = _indexed(
             document_id="doc-b", text="different identity", source_path=original.document.source_path,
         )
-        with self.assertRaises(self._psycopg.errors.UniqueViolation):
+        with self.assertRaisesRegex(ValueError, "source path is already bound"):
             repository.activate(duplicate_path)
         self.assertEqual(repository.get_active("workspace-a", "doc-a"), original)
 
