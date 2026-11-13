@@ -61,7 +61,7 @@ class CollectionLexicalRetriever:
         )
         query_terms = set(tokenize(query))
         if not query_terms or not selected:
-            return self._empty_if_unchanged(snapshot.revision_id)
+            return self._empty_if_unchanged(snapshot.revision_id, selected)
 
         # Load one registered source at a time. Every chunk is checked against
         # its corresponding source page before it can become a citation.
@@ -151,9 +151,8 @@ class CollectionLexicalRetriever:
             ):
                 raise MetadataIntegrityError("collection source changed during retrieval")
 
-    def _empty_if_unchanged(self, revision_id):
-        if self.catalog.get(self.workspace_id, self.collection_id).revision_id != revision_id:
-            raise MetadataIntegrityError("collection metadata changed during retrieval")
+    def _empty_if_unchanged(self, revision_id, selected):
+        self._assert_unchanged(revision_id, selected)
         return RetrievalResponse(
             workspace_id=self.workspace_id, strategy="bm25_raw",
             status="empty", results=[],
