@@ -33,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
         "page_count": result.get("page_count"),
         "chunk_count": result.get("chunk_count"),
         "candidate_pages": evaluation.get("candidate_pages"),
+        "amount_pages": evaluation.get("amount_pages"),
+        "amount_formats": evaluation.get("amount_formats"),
+        "signal_status": evaluation.get("signal_status"),
         "technical_status": evaluation.get("technical_status"),
         "financial_truth_status": evaluation.get("financial_truth_status"),
         "queries": [
