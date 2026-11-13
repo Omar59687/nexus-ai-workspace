@@ -101,6 +101,28 @@ class PageContextTests(unittest.TestCase):
         self.assertIn(140, [x.citation.page_number for x in result.results[:4]])
         self.assertIn(142, [x.citation.page_number for x in result.results[:4]])
 
+    def test_first_hit_neighbors_survive_other_high_density_anchors(self):
+        # Regression: source pages 140 and 142 were lost when a later
+        # high-density BM25 hit near page 137 won a single-anchor contest.
+        source = self.repo.indexed
+        extras = tuple(ExtractedPage(p, "1,234 5,678 9,012 " * 30) for p in (136, 137, 138))
+        pages = source.document.pages + extras
+        chunks = source.chunks + tuple(_chunk(page.page_number, page.text) for page in extras)
+        self.repo.indexed = SimpleNamespace(
+            document=SimpleNamespace(
+                workspace_id="authorized", version_id="version",
+                content_sha256="sha256", source_path="report.pdf", pages=pages,
+            ), chunks=chunks,
+        )
+        raw = RetrievalResponse(
+            workspace_id="authorized", status="ok", strategy="bm25_raw",
+            results=[_hit(chunks[1]), _hit(chunks[-2])],
+        )
+        outcome = expand_page_context(raw, repository=self.repo, workspace_id="authorized")
+        pages_found = [hit.citation.page_number for hit in outcome.results]
+        self.assertEqual(pages_found[:3], [141, 140, 142])
+        self.assertEqual(outcome.results[1].strategy, "adjacent_page_context")
+
     def test_context_does_not_copy_unrelated_or_cross_tenant_pages(self):
         result = expand_page_context(
             self.raw, repository=self.repo, workspace_id="authorized", top_k=3,
