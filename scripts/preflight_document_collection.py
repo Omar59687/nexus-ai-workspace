@@ -20,6 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Report stays outside approved root to prevent accidental ingestion.
         root = args.root.expanduser().resolve(strict=True)
+        if args.report.expanduser().is_symlink() or args.manifest.expanduser().is_symlink():
+            raise CollectionManifestError("report and manifest cannot be symlinks")
         report = args.report.expanduser().resolve()
         manifest = args.manifest.expanduser().resolve(strict=True)
         if report == root or root in report.parents or report == manifest:
