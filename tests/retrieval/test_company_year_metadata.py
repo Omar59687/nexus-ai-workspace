@@ -90,6 +90,54 @@ class CompanyYearMetadataTests(unittest.TestCase):
             company_year_filter=CompanyYearFilter("annual-reports", company, year),
         )
 
+    def test_metadata_revision_change_during_bm25_scan_fails_closed(self):
+        from unittest.mock import patch
+        from dataclasses import replace
+
+        original_iterator = self.repository.iter_active
+        initial_snapshot = self.catalog.get("workspace-a", "annual-reports")
+
+        def changed_iterator(workspace_id, filters=None):
+            source = original_iterator(workspace_id, filters)
+            def rows():
+                # Simulate a concurrent metadata reassignment with the
+                # underlying document versions unchanged.
+                reassigned = [
+                    replace(row, financial_year=2023)
+                    if row.document_id == self.docs["acme24"].document_id
+                    else row for row in initial_snapshot.documents
+                ]
+                self._register_rows(reassigned)
+                yield from source
+            return rows()
+
+        with patch.object(self.repository, "iter_active", side_effect=changed_iterator):
+            with self.assertRaises(MetadataIntegrityError):
+                self._retrieve("Acme Holdings", 2024, strategy="bm25_raw")
+
+    def test_metadata_revision_change_during_vector_scan_fails_closed(self):
+        from unittest.mock import patch
+        from dataclasses import replace
+
+        original_iterator = self.repository.iter_active
+        initial_snapshot = self.catalog.get("workspace-a", "annual-reports")
+
+        def changed_iterator(workspace_id, filters=None):
+            source = original_iterator(workspace_id, filters)
+            def rows():
+                reassigned = [
+                    replace(row, financial_year=2023)
+                    if row.document_id == self.docs["mobily25"].document_id
+                    else row for row in initial_snapshot.documents
+                ]
+                self._register_rows(reassigned)
+                yield from source
+            return rows()
+
+        with patch.object(self.repository, "iter_active", side_effect=changed_iterator):
+            with self.assertRaises(MetadataIntegrityError):
+                self._retrieve("Mobily", 2025, strategy="windowed_e5")
+
     def test_filters_company_and_year_and_preserves_citations(self):
         response = self._retrieve("Acme Holdings", 2024)
         self.assertEqual([row.citation.document_id for row in response.results], [self.docs["acme24"].document_id])
