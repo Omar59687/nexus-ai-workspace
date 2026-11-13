@@ -64,6 +64,23 @@ class DurableCollectionLexicalTests(unittest.TestCase):
         reply = self.retriever.retrieve("revenue", company="Aramco", financial_year=2025)
         self.assertEqual([r.citation.source_path for r in reply.results], ["aramco25.txt"])
 
+    def test_english_revenue_query_finds_arabic_year_filtered_source(self):
+        # No E5, cloud model or dictionary service. The explicit bridge
+        # must preserve the Arabic source citation and the 2024 filter.
+        result = self.retriever.retrieve(
+            "Mobily revenue 2024", company="Mobily", financial_year=2024
+        )
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.results[0].citation.source_path, "mobily24.txt")
+        self.assertIn("77", result.results[0].citation.exact_text)
+
+    def test_arabic_alef_variant_matches_revenue(self):
+        result = self.retriever.retrieve(
+            "ايرادات", company="موبايلي", financial_year=2024
+        )
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.results[0].citation.source_path, "mobily24.txt")
+
     def test_unfiltered_and_other_workspace_rejected(self):
         with self.assertRaises(ValueError):
             self.retriever.retrieve("revenue")
