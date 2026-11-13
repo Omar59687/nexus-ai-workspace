@@ -6,7 +6,6 @@ accuracy claim, and uses only the existing bounded isolated-PDF worker.
 from __future__ import annotations
 
 import hashlib
-import re
 from pathlib import Path
 
 from nexus_ai.documents.collection_index import CollectionIndexService
@@ -33,7 +32,7 @@ def validate_queries(queries: list[str]) -> list[str]:
 
 
 def run_diagnostic(pdf: Path, *, company: str, year: int, queries: list[str],
-                   top_k: int = 5, repository=None) -> dict[str, object]:
+                   top_k: int = 5) -> dict[str, object]:
     """Read exactly one authorized PDF, index in RAM, score lexical citations.
 
     No directory walk, model calls, external services, or database connection.
@@ -55,7 +54,8 @@ def run_diagnostic(pdf: Path, *, company: str, year: int, queries: list[str],
     entries = _manifest_entries({"documents": [{
         "path": relative_path, "company": company, "year": year,
     }]})
-    repo = repository if repository is not None else InMemoryCollectionIndexRepository()
+    # Deliberately never accept an injected persistent repository in this pilot.
+    repo = InMemoryCollectionIndexRepository()
     indexer = CollectionIndexService(
         approved_root=root, repository=repo,
         limits=CollectionIndexLimits(max_documents=1),
