@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,6 @@ MAX_FILE_BYTES = 25 * 1024 * 1024
 MAX_MANIFEST_BYTES = 512 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 _ALLOWED_TYPES = (".pdf", ".md", ".txt")
-_COMPANY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,79}$")
 
 
 class CollectionManifestError(ValueError):
@@ -39,7 +37,9 @@ def _manifest_entries(data: Any) -> list[dict[str, object]]:
         relative, company, year = entry["path"], entry["company"], entry["year"]
         if not isinstance(relative, str) or not relative or len(relative) > 500:
             raise CollectionManifestError(f"entry {ordinal}: invalid path")
-        if not isinstance(company, str) or not _COMPANY.fullmatch(company):
+        if (not isinstance(company, str) or not 1 <= len(company) <= 80
+                or not company[0].isalnum()
+                or any(not (ch.isalnum() or ch in " _.-") for ch in company)):
             raise CollectionManifestError(f"entry {ordinal}: invalid company label")
         if type(year) is not int or not 1900 <= year <= 2100:
             raise CollectionManifestError(f"entry {ordinal}: invalid year")
