@@ -81,6 +81,26 @@ class PageContextTests(unittest.TestCase):
         self.assertEqual(result.results[1].citation.exact_text,
                          self.repo.indexed.document.pages[0].text)
 
+    def test_english_style_query_finds_tables_near_fourth_ranked_hit(self):
+        # A query can rank an intro page first, but its fourth result may
+        # discuss adjacent financial statements. Context is selected from
+        # page-level numeric density, never from a target value.
+        low_density = _hit(self.repo.indexed.chunks[3])  # Page 20
+        anchor = _hit(self.repo.indexed.chunks[1])  # Page 141
+        low_density_2 = low_density.model_copy(deep=True)
+        low_density_3 = low_density.model_copy(deep=True)
+        raw = RetrievalResponse(
+            workspace_id="authorized", status="ok", strategy="bm25_raw",
+            results=[low_density, low_density_2, low_density_3, anchor],
+        )
+        result = expand_page_context(
+            raw, repository=self.repo, workspace_id="authorized",
+            radius=1, top_k=8,
+        )
+        self.assertEqual(result.results[0].citation.page_number, 20)
+        self.assertIn(140, [x.citation.page_number for x in result.results[:4]])
+        self.assertIn(142, [x.citation.page_number for x in result.results[:4]])
+
     def test_context_does_not_copy_unrelated_or_cross_tenant_pages(self):
         result = expand_page_context(
             self.raw, repository=self.repo, workspace_id="authorized", top_k=3,
