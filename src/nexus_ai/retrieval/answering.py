@@ -166,6 +166,7 @@ class GroundedAnswerService:
         default_model: str,
         max_context_chars: int = MAX_ANSWER_CONTEXT_CHARS,
         max_evidence: int = MAX_ANSWER_EVIDENCE,
+        retry_citation_id_echo: bool = False,
     ) -> None:
         if not isinstance(default_model, str) or not default_model.strip():
             raise ValueError("default_model must be non-empty")
@@ -177,6 +178,9 @@ class GroundedAnswerService:
         self.default_model = default_model.strip()
         self.max_context_chars = max_context_chars
         self.max_evidence = max_evidence
+        if type(retry_citation_id_echo) is not bool:
+            raise ValueError("retry_citation_id_echo must be boolean")
+        self.retry_citation_id_echo = retry_citation_id_echo
 
     def answer(
         self,
@@ -229,16 +233,32 @@ class GroundedAnswerService:
         selected_model = (model or self.default_model).strip()
         if not selected_model:
             selected_model = self.default_model
-        try:
-            generated = self.adapter.generate_structured(
-                prompt, AnswerModelOutput, model=selected_model
-            )
-        except Exception as exc:
-            # Do not expose provider messages, which may contain prompt or
-            # endpoint details. Runtime failure is distinct from abstention.
-            raise AnswerGenerationError() from exc
-
-        output = getattr(generated, "result", generated)
+        correction = (
+            "FORMAT REMINDER: Write the requested factual answer in ordinary "
+            "words and numbers in the answer field. Never output any ev_ "
+            "identifier in answer. Put valid evidence identifiers exclusively "
+            "in citation_ids; otherwise set abstain=true.\n"
+        )
+        retry_prompt = prompt.replace("QUESTION_JSON=", correction + "QUESTION_JSON=", 1)
+        for attempt in range(2 if self.retry_citation_id_echo else 1):
+            try:
+                generated = self.adapter.generate_structured(
+                    prompt if attempt == 0 else retry_prompt,
+                    AnswerModelOutput, model=selected_model
+                )
+            except Exception as exc:
+                raise AnswerGenerationError() from exc
+            output = getattr(generated, "result", generated)
+            # Retry only citation-ID leakage, never invalid numeric claims
+            # or other evidence validation failures.
+            if not (
+                isinstance(output, AnswerModelOutput)
+                and not output.abstain
+                and re.search(r"\bev_[0-9a-f]{64}\b", output.answer, re.IGNORECASE)
+                and attempt == 0
+                and self.retry_citation_id_echo
+            ):
+                break
         if not isinstance(output, AnswerModelOutput):
             raise AnswerOutputRejectedError("invalid_model_output")
         if output.abstain:
