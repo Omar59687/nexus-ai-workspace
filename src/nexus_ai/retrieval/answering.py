@@ -308,7 +308,7 @@ def _build_prompt(query: str, evidence: list[dict[str, object]]) -> str:
         "asking two facts, use the relevant records for both, if both are present. "
         "If a requested fact is missing, ambiguous, or unsupported, set "
         "abstain=true; never infer, calculate, or invent a missing figure. "
-        "If the records conflict, do not choose one as true: "
+        "If records conflict, do not choose one as true: "
         "state that they conflict, identify each source, and cite every record "
         "that supports the conflicting values. Never create, alter, or guess "
         "citation IDs. Preserve the language of the question.\n"
