@@ -44,8 +44,8 @@ class CollectionExtractionTests(unittest.TestCase):
         self.assertEqual(results["documents"][1]["duplicate_of"], "one.txt")
 
     def test_failed_first_copy_never_deduplicates_another_failed_copy(self):
-        (self.root / "first.txt").write_bytes(b"\\xff")
-        (self.root / "second.txt").write_bytes(b"\\xff")
+        (self.root / "first.txt").write_bytes(b"\xff")
+        (self.root / "second.txt").write_bytes(b"\xff")
         results = extract_collection(
             self.root, [item("first.txt"), item("second.txt")]
         )
