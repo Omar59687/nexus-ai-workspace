@@ -114,15 +114,17 @@ class PdfWorkerConfigurationTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 IsolatedPdfExtractor(**kwargs)
 
-    def test_windows_platform_fails_closed_without_job_object_support(self):
+    def test_windows_platform_fails_closed_when_job_object_api_is_unavailable(self):
         from unittest.mock import patch
+        import sys
         extractor = IsolatedPdfExtractor()
         with patch("nexus_ai.documents.pdf_worker.os.name", "nt"), \
+             patch.dict(sys.modules, {"nexus_ai.documents.pdf_worker_windows": None}), \
              patch("nexus_ai.documents.pdf_worker.subprocess.Popen") as popen:
             with self.assertRaises(PdfIsolationUnavailableError):
                 extractor.extract(b"pdf", source_path="report.pdf")
-        # The platform gate runs before any process is created, so an
-        # unsupported Windows configuration cannot leave a parser behind.
+        # On a non-Windows host, the mocked Windows path has no Win32 APIs. The
+        # gate must fail closed before attempting to start a parser process.
         popen.assert_not_called()
 
 

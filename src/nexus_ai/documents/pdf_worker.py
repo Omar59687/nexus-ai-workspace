@@ -1,10 +1,9 @@
-"""Timed, bounded, POSIX-resource-limited PDF extraction worker.
+"""Timed, bounded PDF extraction worker for POSIX and Windows.
 
-The parent runner refuses platforms where this implementation cannot enforce
-address-space and CPU limits. Windows remains fail-closed until a separately
-tested runner can constrain memory, terminate the complete child job on timeout,
-and bound pipe I/O. A Windows Job Object does not restrict filesystem or network
-access; this worker is bounded local processing, not a sandbox for hostile PDFs.
+POSIX uses resource limits and a dedicated process group. Windows uses a Job
+Object for process-tree lifetime, memory, CPU time, and process-count limits.
+Neither mechanism restricts filesystem or network access; this is bounded local
+processing, not a security sandbox for hostile PDFs.
 """
 from __future__ import annotations
 
@@ -114,6 +113,8 @@ class IsolatedPdfExtractor:
             content,
             timeout_seconds=self.timeout_seconds,
             max_output_bytes=self.max_output_bytes,
+            memory_limit_bytes=self.memory_limit_bytes,
+            cpu_limit_seconds=self.cpu_limit_seconds,
         )
         try:
             payload = json.loads(output.decode("utf-8", errors="strict"))
@@ -154,10 +155,15 @@ class IsolatedPdfExtractor:
 
 
 def _require_platform_limits() -> None:
+    if os.name == "nt":
+        try:
+            from nexus_ai.documents import pdf_worker_windows  # noqa: F401
+        except Exception as exc:
+            raise PdfIsolationUnavailableError("Windows Job Object support is unavailable") from exc
+        return
     if os.name != "posix":
         raise PdfIsolationUnavailableError(
-            "PDF ingestion is disabled on Windows until a tested resource-limited worker is configured; "
-            "Job Objects alone do not sandbox filesystem or network access"
+            "PDF ingestion is disabled because this operating system has no configured worker limit implementation"
         )
     try:
         import resource
@@ -173,8 +179,23 @@ def _run_bounded_process(
     *,
     timeout_seconds: float,
     max_output_bytes: int,
+    memory_limit_bytes: int | None = None,
+    cpu_limit_seconds: int | None = None,
 ) -> bytes:
     """Stream child I/O with a hard output cap; never use unbounded communicate()."""
+    if os.name == "nt":
+        if memory_limit_bytes is None or cpu_limit_seconds is None:
+            raise PdfIsolationUnavailableError("Windows Job Object memory and CPU limits are required")
+        from nexus_ai.documents.pdf_worker_windows import run_bounded_process
+
+        return run_bounded_process(
+            command,
+            input_bytes,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            memory_limit_bytes=memory_limit_bytes,
+            cpu_limit_seconds=cpu_limit_seconds,
+        )
     _require_platform_limits()
     process = subprocess.Popen(
         command,
@@ -265,7 +286,13 @@ def _kill_worker_process_group(process: subprocess.Popen[bytes]) -> None:
 
 
 def _apply_worker_limits(memory_limit_bytes: int, cpu_limit_seconds: int) -> None:
-    """Apply hard process limits before importing pypdf or parsing input."""
+    """Verify the parent-established Windows Job or apply POSIX limits."""
+    if os.name == "nt":
+        from nexus_ai.documents.pdf_worker_windows import process_is_in_job
+
+        if not process_is_in_job():
+            raise RuntimeError("Windows PDF worker must run inside its parent Job Object")
+        return
     if os.name != "posix":
         raise RuntimeError("POSIX process limits unavailable")
     import resource

@@ -193,7 +193,7 @@ and do not change the default LLM or the existing application database.
 
 | Area | Candidate modules | Current boundary |
 | --- | --- | --- |
-| Document intake | `src/nexus_ai/documents/filesystem.py`, `extractors.py`, `pdf_worker.py`, `chunking.py`, `service.py` | Explicit file only; UTF-8/Markdown in process; PDF defaults to an isolated worker on POSIX and fails closed on Windows until a verified Job Object runner exists |
+| Document intake | `src/nexus_ai/documents/filesystem.py`, `extractors.py`, `pdf_worker.py`, `pdf_worker_windows.py`, `chunking.py`, `service.py` | Explicit approved-root file only; UTF-8/Markdown in process; PDF uses POSIX process limits or a Windows Job Object for bounded local parsing. Neither is a hostile-document sandbox; see `docs/P4_WINDOWS_PDF_WORKER.md` |
 | Identity and embedding | `src/nexus_ai/retrieval/identity.py`, `embeddings.py` | Stable source version, processing identity and index generation; pinned E5 loads only cached weights; fake encoders used in unit tests |
 | Index lifecycle | `src/nexus_ai/retrieval/repository.py` | Bounded volatile in-memory implementation with atomic active-generation swap; no durable DB activation |
 | PostgreSQL proposal | `src/nexus_ai/retrieval/postgres_repository.py` | Candidate DB-API adapter and inert DDL; no Alembic migration applied and no disposable PostgreSQL verification in this runtime |

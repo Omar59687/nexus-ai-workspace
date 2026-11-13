@@ -211,7 +211,8 @@ def main(argv: list[str] | None = None) -> int:
             checks.append({"name": name, "status": "BLOCKED",
                            "reason": "safe isolated database preflight did not pass", "required": True})
     checks.append(_run("windows_pdf", [sys.executable, "-m", "pytest", "-q",
-                       "tests/documents/test_pdf_worker.py"], env, report_dir, secrets))
+                       "tests/documents/test_pdf_worker.py",
+                       "tests/documents/test_pdf_worker_windows.py"], env, report_dir, secrets))
     if args.run_live_models:
         checks.append(_run("local_e5_ollama", [sys.executable, "scripts/run_local_rag_integration.py",
                        "--run-live"], env, report_dir, secrets))
