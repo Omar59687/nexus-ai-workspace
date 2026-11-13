@@ -31,8 +31,9 @@ def expand_page_context(
 ) -> RetrievalResponse:
     """Return top BM25 hits plus bounded adjacent *page-level* context.
 
-    The first eligible BM25 source page anchors the expansion. This function
-    does not look at a gold answer, target page, or target number. Context
+    A numerically dense adjacent page to one of the top five BM25 hits
+    anchors expansion. This function does not look at a gold answer,
+    target page, or target number. Context
     candidates are source-version checked and always labelled as context.
     """
     if type(radius) is not int or not 0 <= radius <= 2:
@@ -59,17 +60,32 @@ def expand_page_context(
             seen.add(identity)
             output.append(hit)
 
-    # Preserve best original scored evidence at rank 1.
+    # Preserve best original scored evidence at rank 1. Select the context
+    # anchor from the first five BM25 hits by adjacent numeric-table density,
+    # not by a known answer amount, PDF page label or expected citation.
     add(response.results[0])
-    anchor = response.results[0].citation
-    if anchor.page_number is not None and anchor.page_number > 0:
-        indexed = repository.get_active(workspace_id, anchor.document_id)
-        if (indexed is None or indexed.document.version_id != anchor.document_version_id
-                or indexed.document.content_sha256 != anchor.source_sha256
-                or indexed.document.source_path != anchor.source_path
-                or indexed.document.workspace_id != workspace_id):
-            raise MetadataIntegrityError("source changed during context expansion")
-        pages = {page.page_number: page.text for page in indexed.document.pages}
+    anchors = []
+    for rank, hit in enumerate(response.results[:5]):
+        citation = hit.citation
+        if citation.page_number is None or citation.page_number <= 0:
+            continue
+        candidate = repository.get_active(workspace_id, citation.document_id)
+        if (candidate is None or candidate.document.version_id != citation.document_version_id
+                or candidate.document.content_sha256 != citation.source_sha256
+                or candidate.document.source_path != citation.source_path
+                or candidate.document.workspace_id != workspace_id):
+            raise MetadataIntegrityError("source changed during context selection")
+        available = {page.page_number: page.text for page in candidate.document.pages}
+        near = [
+            available[n]
+            for delta in range(1, radius + 1)
+            for n in (citation.page_number - delta, citation.page_number + delta)
+            if n in available
+        ]
+        density = sum(_numeric_density(text)[0] for text in near)
+        anchors.append((density, -rank, citation, candidate, available))
+    if anchors:
+        _, _, anchor, indexed, pages = max(anchors, key=lambda row: (row[0], row[1]))
         candidates = []
         for delta in range(1, radius + 1):
             for page_no in (anchor.page_number - delta, anchor.page_number + delta):
