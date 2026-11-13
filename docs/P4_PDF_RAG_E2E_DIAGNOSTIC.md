@@ -64,6 +64,24 @@ and adversarial tests are still required before calling output accurate. A
 high-quality score must never be inferred from top-level `execution_status`.
 Existing fail-closed citation and unsupported-number checks are unchanged.
 
+## Synthetic numeric-fact verification
+
+In addition to citation coverage, every answerable generated-PDF question has
+an explicit numeric fact expectation. The diagnostic records
+`fixture_numeric_facts_match` per case and
+`fixture_answer_coverage.answered_with_expected_numeric_facts` plus
+`all_expected_numeric_facts_present` in the summary. Revenue must represent
+42 million dollars; the multi-document answer must additionally include 1,200
+employees. Arabic and English numeric representations are checked by the
+existing conservative number/unit parser. This prevents a response containing
+only citations or generic prose from appearing factually successful.
+
+These checks are **synthetic fixture assertions only**, not a substitute for
+reviewed financial accuracy, table understanding, year attribution, source
+relevance, or a protected holdout. Top-level technical `execution_status`
+remains independent of numeric-fact matching, and the existing answer rejection
+rules remain unchanged.
+
 ## Local test commands
 
 ```powershell
