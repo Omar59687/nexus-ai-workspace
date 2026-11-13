@@ -268,6 +268,7 @@ def _run_case(retrieval, answerer, case, indexed_by_path):
         "semantic_accuracy": "NOT_SCORED",
         "abstention_quality": "NOT_SCORED",
     }
+    record["fixture_answerability"] = "UNANSWERABLE" if case.empty_evidence else "ANSWERABLE"
     try:
         answer = answerer.answer(case.query, tuple(retrieved), language=case.language)
     except Exception as exc:
@@ -277,6 +278,7 @@ def _run_case(retrieval, answerer, case, indexed_by_path):
             "answer": None,
             "abstained": None,
             "answer_citations": [],
+            "answer_coverage_status": "GENERATION_FAILED",
         })
         return record
     answer_citations_valid = all(
@@ -294,6 +296,13 @@ def _run_case(retrieval, answerer, case, indexed_by_path):
         "generation_status": generation_status,
         "answer": answer.answer,
         "abstained": answer.abstained,
+        "answer_coverage_status": (
+            "EXPECTED_ABSTENTION" if case.empty_evidence and answer.abstained
+            else "UNEXPECTED_ANSWER" if case.empty_evidence
+            else "UNNECESSARY_ABSTENTION" if answer.abstained and expected_found
+            else "ANSWERED_WITH_CITATIONS" if answer.citations and answer_citations_valid
+            else "NOT_ANSWERED"
+        ),
         "answer_citations_valid": answer_citations_valid,
         "answer_citations": [
             {
@@ -340,11 +349,24 @@ def run_live_pdf_rag() -> dict[str, object]:
         )
         cases = [_run_case(retrieval, answerer, case, indexed) for case in PDF_QUERY_CASES]
         success = all(case["execution_status"] == "PASS" for case in cases)
+        answerable = [case for case in cases if case["fixture_answerability"] == "ANSWERABLE"]
+        answered = sum(case["answer_coverage_status"] == "ANSWERED_WITH_CITATIONS" for case in answerable)
+        unnecessary_abstentions = sum(
+            case["answer_coverage_status"] == "UNNECESSARY_ABSTENTION" for case in answerable
+        )
         return {
             "report_version": 1,
             "diagnostic_kind": "synthetic generated-PDF end-to-end diagnostic",
             "execution_status": "PASS" if success else "FAIL",
             "not_an_accuracy_benchmark": True,
+            "fixture_answer_coverage": {
+                "answerable_cases": len(answerable),
+                "answered_with_citations": answered,
+                "unnecessary_abstentions": unnecessary_abstentions,
+                "coverage_fraction": round(answered / len(answerable), 3) if answerable else None,
+                "all_answerable_cases_answered": answered == len(answerable),
+                "not_a_semantic_correctness_score": True,
+            },
             "semantic_accuracy": "NOT_SCORED",
             "abstention_quality": "NOT_SCORED",
             "side_effects": {"database": "NONE", "deployment": "NONE", "source_files": "TEMPORARY_SYNTHETIC_ONLY"},
