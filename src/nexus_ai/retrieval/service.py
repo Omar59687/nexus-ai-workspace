@@ -8,6 +8,11 @@ from typing import Literal
 
 from experiments.rag_prototype import BM25Index, Chunk, ChunkHit, exact_cosine, tokenize
 from nexus_ai.documents.types import RetrievalFilters, RetrievalMatch, SourceChunk
+from nexus_ai.retrieval.company_metadata import (
+    CompanyYearFilter,
+    CompanyYearMetadataCatalog,
+    MetadataIntegrityError,
+)
 from nexus_ai.retrieval.embeddings import EmbeddingProvider, validate_vector
 from nexus_ai.retrieval.repository import DocumentIndexRepository
 from nexus_ai.retrieval.schemas import EvidenceCitation, RetrievedEvidence, RetrievalResponse
@@ -60,10 +65,12 @@ class RetrievalService:
         repository: DocumentIndexRepository,
         embedder: EmbeddingProvider,
         config: RetrievalConfig = RetrievalConfig(),
+        company_metadata: CompanyYearMetadataCatalog | None = None,
     ) -> None:
         self.repository = repository
         self.embedder = embedder
         self.config = config
+        self.company_metadata = company_metadata
 
     def retrieve(
         self,
@@ -73,16 +80,59 @@ class RetrievalService:
         top_k: int = 5,
         filters: RetrievalFilters | None = None,
         strategy: RetrievalStrategy = "windowed_e5",
+        company_year_filter: CompanyYearFilter | None = None,
     ) -> RetrievalResponse:
         _validate_request(query, workspace_id, top_k, strategy, self.config)
         filters = filters or RetrievalFilters()
         if filters.page_number is not None and (type(filters.page_number) is not int or filters.page_number <= 0):
             raise ValueError("page_number filter must be a positive integer")
-        rows_factory = lambda: _iter_active(self.repository, workspace_id, filters)
+        if company_year_filter is None:
+            rows_factory = lambda: _iter_active(self.repository, workspace_id, filters)
+        else:
+            if not isinstance(company_year_filter, CompanyYearFilter):
+                raise ValueError("company_year_filter must be a validated CompanyYearFilter")
+            if self.company_metadata is None:
+                raise MetadataIntegrityError("company/year metadata filtering is not configured")
+            metadata_snapshot, selected = self.company_metadata.resolve(
+                self.repository, workspace_id=workspace_id, query_filter=company_year_filter,
+            )
+            selected_by_id = {row.document_id: row for row in selected}
+            if filters.document_id is not None:
+                selected_by_id = {
+                    document_id: metadata for document_id, metadata in selected_by_id.items()
+                    if document_id == filters.document_id
+                }
+            if filters.page_number is not None:
+                page_scoped = {}
+                for document_id, metadata in selected_by_id.items():
+                    active = self.repository.get_active(workspace_id, document_id)
+                    if (active is None
+                            or active.document.workspace_id != workspace_id
+                            or active.document.version_id != metadata.document_version_id
+                            or active.document.source_path != metadata.source_path
+                            or active.document.content_sha256 != metadata.source_sha256):
+                        raise MetadataIntegrityError(
+                            "collection metadata is stale or incomplete; refresh the collection snapshot"
+                        )
+                    if any(chunk.page_number == filters.page_number for chunk in active.chunks):
+                        page_scoped[document_id] = metadata
+                selected_by_id = page_scoped
+            rows_factory = lambda: _iter_collection_active(
+                self.repository, workspace_id, filters, selected_by_id,
+                metadata_catalog=self.company_metadata,
+                collection_id=metadata_snapshot.collection_id,
+                revision_id=metadata_snapshot.revision_id,
+            )
         if strategy == "windowed_e5":
             results = self._windowed_e5_stream(query, rows_factory(), workspace_id, filters, top_k)
         else:
             results = self._bm25_stream(query, rows_factory, workspace_id, filters, top_k)
+        if company_year_filter is not None:
+            current = self.company_metadata.get(workspace_id, metadata_snapshot.collection_id)
+            if current.revision_id != metadata_snapshot.revision_id:
+                raise MetadataIntegrityError(
+                    "collection metadata changed during retrieval; retry with a fresh snapshot"
+                )
         return RetrievalResponse(
             workspace_id=workspace_id,
             strategy=strategy,
@@ -404,6 +454,54 @@ def _iter_active(repository, workspace_id, filters):
     if callable(iterator):
         return iterator(workspace_id, filters)
     return iter(repository.list_active(workspace_id, filters))
+
+
+def _iter_collection_active(
+    repository, workspace_id, filters, expected_members, *,
+    metadata_catalog, collection_id, revision_id,
+):
+    """Yield only the selected, version-bound collection members.
+
+    Recheck identities during each retrieval pass so a concurrent replacement
+    cannot cause stale metadata to authorize a different active source version.
+    """
+    def assert_revision():
+        current = metadata_catalog.get(workspace_id, collection_id)
+        if current.revision_id != revision_id:
+            raise MetadataIntegrityError(
+                "collection metadata changed during retrieval; retry with a fresh snapshot"
+            )
+
+    assert_revision()
+    source = _iter_active(repository, workspace_id, filters)
+    seen: set[str] = set()
+    try:
+        for indexed in source:
+            assert_revision()
+            document_id = indexed.document.document_id
+            metadata = expected_members.get(document_id)
+            if metadata is None:
+                continue
+            if document_id in seen:
+                raise MetadataIntegrityError("repository returned a duplicate collection document")
+            document = indexed.document
+            if (document.workspace_id != workspace_id
+                    or document.version_id != metadata.document_version_id
+                    or document.source_path != metadata.source_path
+                    or document.content_sha256 != metadata.source_sha256):
+                raise MetadataIntegrityError(
+                    "collection metadata is stale or incomplete; refresh the collection snapshot"
+                )
+            seen.add(document_id)
+            yield indexed
+            assert_revision()
+    finally:
+        close = getattr(source, "close", None)
+        if close is not None:
+            close()
+    assert_revision()
+    if seen != set(expected_members):
+        raise MetadataIntegrityError("collection metadata is stale or incomplete; refresh the collection snapshot")
 
 
 def _assert_workspace(indexed, workspace_id):
