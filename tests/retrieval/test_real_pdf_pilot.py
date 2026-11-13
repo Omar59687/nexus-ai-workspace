@@ -42,6 +42,7 @@ class RealPdfPilotTests(unittest.TestCase):
         self.assertEqual(limited.reason_code, "vector_coordinate_budget_exceeded")
         private = PilotStageError("ingestion", ValueError("confidential PDF revenue value: 123"))
         self.assertEqual(private.reason_code, "value_error_unclassified")
+        self.assertIsNone(private.origin)
         self.assertNotIn("confidential", str(private))
 
     def test_known_real_pdf_ingestion_limits_are_classified_safely(self):
@@ -76,6 +77,7 @@ class RealPdfPilotTests(unittest.TestCase):
             self.assertEqual(status, 1)
             self.assertEqual(result["failed_stage"], "ingestion")
             self.assertEqual(result["reason_code"], "text_window_limit_exceeded")
+            self.assertIsNone(result["failure_origin"])
 
     def test_model_failure_emits_safe_blocked_report(self):
         with tempfile.TemporaryDirectory() as directory:
