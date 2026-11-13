@@ -250,6 +250,11 @@ class GroundedAnswerService:
             )
         if not output.answer.strip():
             raise AnswerOutputRejectedError("empty_answer")
+        # Citation identifiers belong in citation_ids, never in user-visible prose.
+        # A model can echo valid identifiers as its entire "answer" while still
+        # satisfying the schema and citation-membership checks.
+        if re.search(r"\bev_[0-9a-f]{64}\b", output.answer, re.IGNORECASE):
+            raise AnswerOutputRejectedError("citation_id_leaked_into_answer")
         if not output.citation_ids:
             raise AnswerOutputRejectedError("answer_without_citations")
         if len(set(output.citation_ids)) != len(output.citation_ids):
