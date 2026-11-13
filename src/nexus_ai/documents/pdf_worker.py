@@ -211,7 +211,12 @@ def _run_bounded_process(
     if os.name == "nt":
         if memory_limit_bytes is None or cpu_limit_seconds is None:
             raise PdfIsolationUnavailableError("Windows Job Object memory and CPU limits are required")
-        from nexus_ai.documents.pdf_worker_windows import run_bounded_process
+        try:
+            from nexus_ai.documents.pdf_worker_windows import run_bounded_process
+        except ImportError as exc:
+            raise PdfIsolationUnavailableError(
+                "Windows PDF worker Job Object support is unavailable"
+            ) from exc
 
         return run_bounded_process(
             command,
