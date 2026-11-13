@@ -16,6 +16,42 @@ from pathlib import Path
 WORKSPACE_ID = "nexus-real-pdf-owner-pilot"
 
 
+class PilotStageError(RuntimeError):
+    """Safe phase and allowlisted reason; never preserve provider/PDF exception text."""
+
+    def __init__(self, stage: str, cause: Exception) -> None:
+        self.stage = stage
+        self.reason_code = _safe_reason_code(cause)
+        super().__init__(f"{stage}:{self.reason_code}")
+
+
+def _safe_reason_code(exc: Exception) -> str:
+    from nexus_ai.retrieval.answering import AnswerOutputRejectedError
+
+    if isinstance(exc, AnswerOutputRejectedError):
+        return "answer_rejected"
+    # Exact messages emitted by our own bounded ingestion controls; do not
+    # leak arbitrary third-party/PDF/provider error strings into reports.
+    if isinstance(exc, ValueError):
+        message = str(exc)
+        if message == "index exceeds max_vector_coordinates before embedding":
+            return "vector_coordinate_budget_exceeded"
+        if message == "index exceeds max_windows before embedding":
+            return "text_window_limit_exceeded"
+        if message == "document exceeds max_total_extracted_chars or contains no pages":
+            return "extracted_text_limit_or_empty"
+        if message == "document contains no extractable text":
+            return "no_extractable_text"
+        if message == "index exceeds max_vector_coordinates during embedding":
+            return "vector_coordinate_budget_exceeded"
+        if message == "index exceeds max_chunks":
+            return "chunk_limit_exceeded"
+        if message == "PDF extraction requires an isolated parser worker":
+            return "pdf_worker_isolation_unavailable"
+        return "value_error_unclassified"
+    return "runtime_error_unclassified"
+
+
 def validate_pdf_path(value: str) -> Path:
     """Require an existing ordinary .pdf; do not discover or crawl directories."""
     # Copy-as-path and interactive shells commonly add quotes or whitespace.
@@ -52,12 +88,18 @@ def run_pilot(pdf: Path, question: str) -> dict[str, object]:
     ingestion = DocumentIngestionService(
         approved_root=pdf.parent, repository=repository, embedder=embedder
     )
-    ingested = ingestion.ingest(WORKSPACE_ID, pdf.name)
+    try:
+        ingested = ingestion.ingest(WORKSPACE_ID, pdf.name)
+    except Exception as exc:
+        raise PilotStageError("ingestion", exc) from None
     indexed = repository.get_active(WORKSPACE_ID, ingested.document_id)
     if indexed is None:
         raise RuntimeError("PDF index was not activated")
     retrieval = RetrievalService(repository=repository, embedder=embedder)
-    found = retrieval.retrieve(question, workspace_id=WORKSPACE_ID, top_k=5)
+    try:
+        found = retrieval.retrieve(question, workspace_id=WORKSPACE_ID, top_k=5)
+    except Exception as exc:
+        raise PilotStageError("retrieval", exc) from None
     citations = tuple(row.citation for row in found.results)
 
     from scripts.run_pdf_rag_e2e import _citation_maps_to_extracted_pdf
@@ -74,7 +116,10 @@ def run_pilot(pdf: Path, question: str) -> dict[str, object]:
         timeout_seconds=client.timeout_seconds,
     )
     answerer = GroundedAnswerService(adapter=adapter, default_model=client.default_model)
-    answered = answerer.answer(question, citations)
+    try:
+        answered = answerer.answer(question, citations)
+    except Exception as exc:
+        raise PilotStageError("answer_generation", exc) from None
     if not all(c in citations and _citation_maps_to_extracted_pdf(c, {pdf.name: indexed}) for c in answered.citations):
         raise RuntimeError("generated answer citation failed source validation")
     return {
@@ -119,13 +164,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, help="optional JSON output outside repository")
     args = parser.parse_args(argv)
     try:
-        pdf = validate_pdf_path(args.pdf)
+        try:
+            pdf = validate_pdf_path(args.pdf)
+        except Exception as exc:
+            raise PilotStageError("path_validation", exc) from None
         report = run_pilot(pdf, args.question)
     except Exception as exc:
         report = {
             "report_kind": "single trusted real PDF pilot; unreviewed",
             "status": "BLOCKED",
             "error_type": type(exc).__name__,
+            "failed_stage": exc.stage if isinstance(exc, PilotStageError) else "pilot_setup",
+            "reason_code": exc.reason_code if isinstance(exc, PilotStageError) else "runtime_error_unclassified",
             "not_an_accuracy_benchmark": True,
             "side_effects": {"database": "NONE", "deployment": "NONE", "index": "MEMORY_ONLY"},
         }
