@@ -56,8 +56,13 @@ jobs:
             tests/test_financial_evidence_evaluation.py
       - name: Live disposable PostgreSQL acceptance (never accept skips)
         run: |
-          python -m pytest -q -rs tests/persistence/test_postgres_integration.py \
-            tests/persistence/test_postgres_repository.py
+          set -o pipefail
+          python -m pytest -q -rs tests/persistence/test_postgres_integration.py | tee /tmp/postgres-live.log
+          if grep -Eq '([1-9][0-9]*) skipped' /tmp/postgres-live.log; then
+            echo "Live PostgreSQL tests skipped; acceptance denied"
+            exit 1
+          fi
+          python -m pytest -q tests/persistence/test_postgres_repository.py
       - name: Synthetic benchmark reproducibility (not real financial accuracy)
         run: |
           python -m nexus_ai.benchmark.financial_evidence > /tmp/p4-report.json
