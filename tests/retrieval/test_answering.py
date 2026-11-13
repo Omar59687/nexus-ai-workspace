@@ -144,6 +144,60 @@ class GroundedAnswerTests(unittest.TestCase):
                     self.service(adapter).answer("What was revenue?", (source,), language="en")
                 self.assertEqual(raised.exception.reason_code, "citation_id_leaked_into_answer")
 
+    def test_one_shot_citation_echo_retry_is_explicit_and_revalidates_output(self):
+        source = evidence(text="Revenue was 42 million dollars.")
+        citation_id = self.valid_id(source)
+
+        class SequentialAdapter:
+            def __init__(self, second):
+                self.second = second
+                self.calls = []
+
+            def generate_structured(self, prompt, model_class, *, model=None):
+                self.calls.append(prompt)
+                reply = (
+                    AnswerModelOutput(answer=citation_id, citation_ids=[citation_id], abstain=False)
+                    if len(self.calls) == 1 else self.second
+                )
+                return SimpleNamespace(result=reply)
+
+        repaired = SequentialAdapter(AnswerModelOutput(
+            answer="Revenue was 42 million dollars.",
+            citation_ids=[citation_id], abstain=False,
+        ))
+        service = GroundedAnswerService(
+            adapter=repaired, default_model="local-test",
+            retry_citation_id_echo=True,
+        )
+        answer = service.answer("What was revenue?", (source,), language="en")
+        self.assertFalse(answer.abstained)
+        self.assertEqual(len(repaired.calls), 2)
+        self.assertIn("FORMAT REMINDER", repaired.calls[1])
+        self.assertEqual(answer.citations, (source,))
+
+        bad = SequentialAdapter(AnswerModelOutput(
+            answer="Revenue was 99 million dollars.",
+            citation_ids=[citation_id], abstain=False,
+        ))
+        with self.assertRaises(AnswerOutputRejectedError) as raised:
+            GroundedAnswerService(
+                adapter=bad, default_model="local-test",
+                retry_citation_id_echo=True,
+            ).answer("What was revenue?", (source,), language="en")
+        self.assertEqual(raised.exception.reason_code, "unsupported_numeric_claim")
+        self.assertEqual(len(bad.calls), 2)
+
+        persistent = SequentialAdapter(AnswerModelOutput(
+            answer=citation_id, citation_ids=[citation_id], abstain=False,
+        ))
+        with self.assertRaises(AnswerOutputRejectedError) as raised:
+            GroundedAnswerService(
+                adapter=persistent, default_model="local-test",
+                retry_citation_id_echo=True,
+            ).answer("What was revenue?", (source,), language="en")
+        self.assertEqual(raised.exception.reason_code, "citation_id_leaked_into_answer")
+        self.assertEqual(len(persistent.calls), 2)
+
     def test_unsupported_numeric_claim_is_rejected_and_localized_digits_are_normalized(self):
         source = evidence(text="Revenue was 42.")
         forged = FakeAdapter(AnswerModelOutput(
