@@ -28,6 +28,12 @@ from nexus_ai.retrieval.identity import (
     stable_processing_id,
     stable_source_version_id,
 )
+from nexus_ai.retrieval.collection_repository import (
+    COLLECTION_SCHEMA_DDL, PostgresCollectionIndexRepository,
+    InMemoryCollectionIndexRepository,
+)
+from nexus_ai.documents.collection_types import CollectionIndex
+from nexus_ai.documents.collection_index import CollectionIndexService
 from nexus_ai.retrieval.postgres_repository import (
     POSTGRES_SCHEMA_DDL,
     PostgresDocumentIndex,
@@ -115,7 +121,7 @@ def _create_test_schema(psycopg, params) -> str:
             with connection.cursor() as cursor:
                 cursor.execute(f'CREATE SCHEMA "{schema}"')
                 cursor.execute(f'SET search_path TO "{schema}"')
-                for statement in POSTGRES_SCHEMA_DDL:
+                for statement in (*POSTGRES_SCHEMA_DDL, *COLLECTION_SCHEMA_DDL):
                     cursor.execute(statement)
     except BaseException as setup_error:
         try:
@@ -275,6 +281,98 @@ class PostgresLiveIntegrationTests(unittest.TestCase):
         return PostgresDocumentIndex(
             lambda: self._psycopg.connect(**params), read_limits=limits,
         )
+
+    def collection_repository(self):
+        params = dict(self._base_params)
+        params["options"] = f"-csearch_path={self._schema}"
+        return PostgresCollectionIndexRepository(lambda: self._psycopg.connect(**params))
+
+    def test_model_free_collection_persists_and_replaces_after_restart(self):
+        """Separate source-only repository, not the embedded/vector index."""
+        from nexus_ai.documents.chunking import SourceAwareChunker
+        from nexus_ai.documents.types import ExtractionResult
+        from nexus_ai.retrieval.identity import stable_document_id, stable_source_version_id
+        from nexus_ai.retrieval.identity import stable_processing_id
+        source_path = "mobily-2025.txt"
+        workspace = "owner-a"
+        document_id = stable_document_id(workspace, source_path)
+
+        def record(value):
+            source_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()
+            version_id = stable_source_version_id(document_id, source_hash)
+            pages = (ExtractedPage(None, value),)
+            extracted = ExtractionResult("utf8-fixture", "1", "text/plain", pages)
+            chunker = SourceAwareChunker()
+            chunks = chunker.chunk(
+                extracted, document_id=document_id, version_id=version_id,
+                source_path=source_path, source_sha256=source_hash,
+            )
+            doc = DocumentVersion(
+                workspace_id=workspace, document_id=document_id, version_id=version_id,
+                processing_id=stable_processing_id(
+                    extractor_name="utf8-fixture", extractor_version="1",
+                    media_type="text/plain", offsets_reliable=True,
+                    chunker_fingerprint=chunker.fingerprint,
+                ),
+                source_path=source_path, content_sha256=source_hash,
+                media_type="text/plain", extractor_name="utf8-fixture",
+                extractor_version="1", chunker_version=chunker.fingerprint,
+                pages=pages, warnings=(), offsets_reliable=True,
+            )
+            return CollectionIndex(doc, chunks)
+
+        first = record("Mobily 2025 revenue 42 SAR")
+        replacement = record("Mobily 2025 revenue 43 SAR")
+        self.assertTrue(self.collection_repository().activate(first))
+        self.assertFalse(self.collection_repository().activate(first))
+        self.assertEqual(
+            self.collection_repository().get_active(workspace, document_id), first
+        )
+        self.assertIsNone(
+            self.collection_repository().get_active("different-owner", document_id)
+        )
+        self.assertTrue(self.collection_repository().activate(replacement))
+        self.assertEqual(
+            self.collection_repository().get_active(workspace, document_id), replacement
+        )
+        self.assertTrue(self.collection_repository().delete(workspace, document_id))
+        self.assertIsNone(
+            self.collection_repository().get_active(workspace, document_id)
+        )
+
+    def test_model_free_collection_fails_closed_on_conflicting_generation(self):
+        from nexus_ai.documents.chunking import SourceAwareChunker
+        from nexus_ai.documents.types import ExtractionResult
+        from nexus_ai.retrieval.identity import stable_document_id, stable_source_version_id, stable_processing_id
+        text = "Revenue 42"
+        workspace = "owner-c"
+        source_path = "report.txt"
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        docid = stable_document_id(workspace, source_path)
+        version = stable_source_version_id(docid, digest)
+        extracted = ExtractionResult("fixture", "1", "text/plain", (ExtractedPage(None, text),))
+        chunker = SourceAwareChunker()
+        chunks = chunker.chunk(extracted, document_id=docid, version_id=version,
+                               source_path=source_path, source_sha256=digest)
+        doc = DocumentVersion(
+            workspace_id=workspace, document_id=docid, version_id=version,
+            processing_id=stable_processing_id(
+                extractor_name="fixture", extractor_version="1",
+                media_type="text/plain", offsets_reliable=True,
+                chunker_fingerprint=chunker.fingerprint,
+            ), source_path=source_path, content_sha256=digest, media_type="text/plain",
+            extractor_name="fixture", extractor_version="1",
+            chunker_version=chunker.fingerprint,
+            pages=extracted.pages, warnings=(), offsets_reliable=True,
+        )
+        original = CollectionIndex(doc, chunks)
+        self.assertTrue(self.collection_repository().activate(original))
+        damaged = CollectionIndex(
+            replace(doc, warnings=("different provenance",)), chunks
+        )
+        with self.assertRaises(ValueError):
+            self.collection_repository().activate(damaged)
+        self.assertEqual(self.collection_repository().get_active(workspace, docid), original)
 
     def test_restart_safe_idempotency_round_trip_and_workspace_isolation(self):
         indexed = _indexed(text="revenue evidence 42")
