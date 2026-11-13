@@ -18,7 +18,10 @@ WORKSPACE_ID = "nexus-real-pdf-owner-pilot"
 
 def validate_pdf_path(value: str) -> Path:
     """Require an existing ordinary .pdf; do not discover or crawl directories."""
-    path = Path(value).expanduser()
+    # Copy-as-path and interactive shells commonly add quotes or whitespace.
+    # Strip only surrounding whitespace/quotes; preserve spaces in filenames.
+    cleaned = value.strip().strip('"').strip()
+    path = Path(cleaned).expanduser()
     if not path.is_absolute() or path.suffix.casefold() != ".pdf":
         raise ValueError("provide an absolute path to one .pdf file")
     if path.is_symlink():
