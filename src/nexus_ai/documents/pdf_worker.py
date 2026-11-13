@@ -44,6 +44,8 @@ class PdfWorkerExtractionError(ValueError):
             "page_char_limit": "PDF page exceeds the extracted-text limit",
             "total_char_limit": "PDF exceeds the total extracted-text limit",
             "corrupt": "PDF is corrupted or could not be extracted",
+            "worker_startup": "PDF parser worker could not start with its configured environment",
+            "worker_no_result": "PDF parser worker exited without returning a result",
             "dependency_missing": "PDF extraction requires the optional pypdf package",
             "no_pages": "PDF contains no pages",
         }
@@ -88,7 +90,9 @@ class IsolatedPdfExtractor:
         self.timeout_seconds = float(timeout_seconds)
         self.memory_limit_bytes = memory_limit_bytes
         self.cpu_limit_seconds = cpu_limit_seconds
+        self._uses_builtin_worker = worker_script is None
         self.worker_script = Path(worker_script or __file__).resolve(strict=True)
+        self.worker_python_path = str(Path(__file__).resolve().parents[2])
         self.python_executable = python_executable or sys.executable
         self.max_output_bytes = max_total_chars * 6 + max_pages * 160 + 4096
 
@@ -98,9 +102,7 @@ class IsolatedPdfExtractor:
         if len(content) > self.max_input_bytes:
             raise ValueError("PDF input exceeds the configured byte limit")
         _require_platform_limits()
-        command = [
-            self.python_executable,
-            str(self.worker_script),
+        worker_args = [
             "--worker",
             "--max-pages", str(self.max_pages),
             "--max-page-chars", str(self.max_page_chars),
@@ -108,6 +110,22 @@ class IsolatedPdfExtractor:
             "--memory-limit-bytes", str(self.memory_limit_bytes),
             "--cpu-limit-seconds", str(self.cpu_limit_seconds),
         ]
+        if os.name == "nt" and self._uses_builtin_worker:
+            # Explicit bootstrap keeps the package importable when the worker
+            # runs from SystemRoot and converts pre-main import failures into a
+            # safe, bounded reason code instead of an unexplained empty pipe.
+            bootstrap = (
+                "import sys\n"
+                "try:\n"
+                " from nexus_ai.documents.pdf_worker import _worker\n"
+                "except BaseException:\n"
+                " sys.stdout.write('{\"error\":\"worker_startup\"}')\n"
+                " raise SystemExit(120)\n"
+                "raise SystemExit(_worker(sys.argv[1:]))\n"
+            )
+            command = [self.python_executable, "-c", bootstrap, *worker_args]
+        else:
+            command = [self.python_executable, str(self.worker_script), *worker_args]
         output = _run_bounded_process(
             command,
             content,
@@ -115,6 +133,7 @@ class IsolatedPdfExtractor:
             max_output_bytes=self.max_output_bytes,
             memory_limit_bytes=self.memory_limit_bytes,
             cpu_limit_seconds=self.cpu_limit_seconds,
+            python_path=self.worker_python_path,
         )
         try:
             payload = json.loads(output.decode("utf-8", errors="strict"))
@@ -181,6 +200,7 @@ def _run_bounded_process(
     max_output_bytes: int,
     memory_limit_bytes: int | None = None,
     cpu_limit_seconds: int | None = None,
+    python_path: str | None = None,
 ) -> bytes:
     """Stream child I/O with a hard output cap; never use unbounded communicate()."""
     if os.name == "nt":
@@ -195,6 +215,7 @@ def _run_bounded_process(
             max_output_bytes=max_output_bytes,
             memory_limit_bytes=memory_limit_bytes,
             cpu_limit_seconds=cpu_limit_seconds,
+            python_path=python_path,
         )
     _require_platform_limits()
     process = subprocess.Popen(

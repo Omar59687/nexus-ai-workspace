@@ -25,6 +25,9 @@ the Python standard library and Win32 APIs:
   checked inside the parser worker.
 - Gives the child only an explicit inherited-handle allowlist for stdin, stdout,
   and stderr redirected to `NUL`.
+- Uses the same `sys.executable` as the parent and prepends the installed
+  `nexus_ai` package root to the child's restricted `PYTHONPATH`; this keeps
+  imports independent of the worker's `SystemRoot` working directory.
 - Verifies from inside the child that it is running in a Job Object before
   importing `pypdf` or parsing bytes.
 

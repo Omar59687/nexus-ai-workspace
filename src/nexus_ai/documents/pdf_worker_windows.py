@@ -13,6 +13,7 @@ import subprocess
 import threading
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 from nexus_ai.documents.pdf_worker import (
     PdfIsolationUnavailableError,
@@ -131,6 +132,7 @@ def run_bounded_process(
     max_output_bytes: int,
     memory_limit_bytes: int,
     cpu_limit_seconds: int,
+    python_path: str | None = None,
 ) -> bytes:
     """Start suspended, assign to a constrained Job Object, then stream I/O."""
     if not hasattr(ctypes, "WinDLL"):
@@ -268,6 +270,11 @@ def run_bounded_process(
             key: value for key, value in os.environ.items()
             if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME"}
         }
+        if python_path:
+            inherited_python_path = safe_environment.get("PYTHONPATH", "")
+            python_entries = [str(Path(python_path).resolve())]
+            python_entries.extend(entry for entry in inherited_python_path.split(os.pathsep) if entry)
+            safe_environment["PYTHONPATH"] = os.pathsep.join(python_entries)
         system_root = safe_environment.get("SystemRoot") or safe_environment.get("SYSTEMROOT")
         if not system_root:
             raise PdfIsolationUnavailableError("Windows PDF worker requires a configured SystemRoot")

@@ -15,21 +15,31 @@ try {
     if ($existingPythonPath) {
         $env:PYTHONPATH += [System.IO.Path]::PathSeparator + $existingPythonPath
     }
-    $pythonVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    $pythonCommand = Get-Command python -CommandType Application -ErrorAction Stop
+    $pythonExecutable = $pythonCommand.Source
+    $pythonRuntime = & $pythonExecutable -c "import sys; print(sys.executable)"
     if ($LASTEXITCODE -ne 0) {
-        throw "Python is unavailable."
+        throw "Python runtime discovery failed."
+    }
+    if ([System.IO.Path]::GetFullPath($pythonRuntime.Trim()) -ne [System.IO.Path]::GetFullPath($pythonExecutable)) {
+        throw "The selected Python command does not resolve to the interpreter the worker will reuse."
+    }
+    $pythonVersion = & $pythonExecutable -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python is unavailable at the selected executable."
     }
     if ($pythonVersion.Trim() -ne "3.12") {
         throw "Python 3.12 is required; found $($pythonVersion.Trim())."
     }
 
-    & python -c "import pypdf"
+    & $pythonExecutable -c "import pypdf"
     if ($LASTEXITCODE -ne 0) {
         throw "The repository's pypdf dependency is unavailable in this Python environment."
     }
 
-    Write-Output "Running generated-fixture Windows PDF worker tests."
-    & python -m pytest -q tests/documents/test_pdf_worker.py tests/documents/test_pdf_worker_windows.py
+    Write-Output "Python interpreter: $($pythonRuntime.Trim())"
+    Write-Output "Running generated-fixture Windows PDF worker tests with that interpreter."
+    & $pythonExecutable -m pytest -q tests/documents/test_pdf_worker.py tests/documents/test_pdf_worker_windows.py
     $testExitCode = $LASTEXITCODE
     if ($testExitCode -ne 0) {
         throw "Windows PDF worker tests failed with exit code $testExitCode."

@@ -83,6 +83,22 @@ class WindowsPdfWorkerTests(unittest.TestCase):
             ["Nexus generated fixture page one", "Page two evidence"],
         )
 
+    def test_worker_uses_the_test_process_python_interpreter(self):
+        worker = _script(
+            self.root,
+            "report_interpreter.py",
+            "import json,sys\nsys.stdin.buffer.read()\n"
+            "print(json.dumps({'pages':[{'page_number':1,'text':'ok'}],"
+            "'warnings':[],'parser_version':sys.executable}))\n",
+        )
+        result = IsolatedPdfExtractor(worker_script=worker).extract(
+            b"fixture", source_path="generated-interpreter-check.pdf"
+        )
+        self.assertEqual(
+            os.path.normcase(os.path.realpath(result.extractor_version)),
+            os.path.normcase(os.path.realpath(sys.executable)),
+        )
+
     def test_ingestion_keeps_approved_root_source_and_version_provenance(self):
         from nexus_ai.documents.service import DocumentIngestionService
         from nexus_ai.retrieval.repository import InMemoryDocumentIndex

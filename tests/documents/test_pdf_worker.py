@@ -127,6 +127,30 @@ class PdfWorkerConfigurationTests(unittest.TestCase):
         # gate must fail closed before attempting to start a parser process.
         popen.assert_not_called()
 
+    def test_builtin_windows_worker_bootstrap_uses_package_root_and_current_interpreter(self):
+        import json
+        from unittest.mock import patch
+
+        extractor = IsolatedPdfExtractor()
+        payload = json.dumps({
+            "pages": [{"page_number": 1, "text": "source"}],
+            "warnings": [],
+            "parser_version": "fake",
+        }).encode("utf-8")
+        with patch("nexus_ai.documents.pdf_worker.os.name", "nt"), \
+             patch("nexus_ai.documents.pdf_worker._require_platform_limits"), \
+             patch("nexus_ai.documents.pdf_worker._run_bounded_process", return_value=payload) as run:
+            result = extractor.extract(b"fixture", source_path="generated.pdf")
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[1], "-c")
+        compile(command[2], "<windows-pdf-worker-bootstrap>", "exec")
+        self.assertIn("nexus_ai.documents.pdf_worker import _worker", command[2])
+        self.assertIn("sys.stdout.write('{\"error\":\"worker_startup\"}')", command[2])
+        self.assertEqual(run.call_args.kwargs["python_path"], extractor.worker_python_path)
+        self.assertEqual(result.pages[0].text, "source")
+
 
 if __name__ == "__main__":
     unittest.main()
