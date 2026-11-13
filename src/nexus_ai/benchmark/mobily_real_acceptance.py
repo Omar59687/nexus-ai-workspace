@@ -18,6 +18,7 @@ from nexus_ai.documents.collection_types import CollectionIndexLimits
 from nexus_ai.retrieval.collection_repository import InMemoryCollectionIndexRepository
 from nexus_ai.retrieval.collection_registration import register_indexed_manifest
 from nexus_ai.retrieval.collection_lexical import CollectionLexicalRetriever
+from nexus_ai.retrieval.page_context import expand_page_context
 from nexus_ai.retrieval.company_metadata import CompanyYearMetadataCatalog
 from nexus_ai.benchmark.financial_chunk_forensics import normalize_anchor
 
@@ -225,13 +226,30 @@ def run(pdf: Path) -> dict:
         retriever.retrieve(q, company="Mobily", financial_year=2025, top_k=10)
         for q in QUERIES
     )
+    # Context expansion is a distinct retrieval strategy, not an exact
+    # financial-answer assertion. It cannot consult the visually labeled
+    # gold pages or revenue number when selecting neighboring source pages.
+    context_responses = tuple(
+        expand_page_context(
+            response, repository=repo, workspace_id=_WORKSPACE,
+            radius=1, top_k=10,
+        )
+        for response in responses
+    )
+    evaluation = assess_evidence(indexed, context_responses)
+    raw = assess_evidence(indexed, responses)
+    evaluation["raw_bm25_verified_gold_retrieval_status"] = raw["verified_gold_retrieval_status"]
+    evaluation["raw_bm25_top_5_pages"] = [
+        row["top_5_pages"] for row in raw["languages"]
+    ]
+    evaluation["context_expansion_applied"] = True
     return {
         "status": "PASS",
         "source_sha256": indexed.document.content_sha256,
         "page_count": len(indexed.document.pages),
         "chunk_count": len(indexed.chunks),
         "source_processing_id": indexed.document.processing_id,
-        "evaluation": assess_evidence(indexed, responses),
+        "evaluation": evaluation,
         "scope": {"llm": "NONE", "embeddings": "NONE",
                   "database": "NONE", "hosted_services": "NONE"},
     }
