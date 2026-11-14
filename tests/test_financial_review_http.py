@@ -22,6 +22,10 @@ class StubLedger:
     def reject(self, item_id, *, reviewer_id):
         self.calls.append(("reject", item_id, reviewer_id))
 
+    def pending(self, *, limit=50):
+        self.calls.append(("pending", limit))
+        return [{"id": 7, "requires_visual_review": True}]
+
     def status(self):
         self.calls.append(("status",))
         return {"pending": 1, "approved": 0, "rejected": 0}
@@ -34,7 +38,7 @@ class StubLedger:
 def make_client(*, authenticated=True, permissions=None, ledger=None):
     ledger = ledger or StubLedger()
     permissions = permissions if permissions is not None else {
-        "submit", "approve", "reject", "status", "analyze",
+        "submit", "approve", "reject", "status", "analyze", "list",
     }
     app = FastAPI()
     app.include_router(create_financial_review_router(
@@ -86,6 +90,7 @@ def test_bounded_api_review_lifecycle_and_trusted_reviewer():
     assert response.status_code == 204
     assert ("reject", 8, "trusted-reviewer") in ledger.calls
     assert client.get("/financial-reviews/status").status_code == 200
+    assert client.get("/financial-reviews/selections?limit=2").json()["items"][0]["id"] == 7
     assert client.post("/financial-reviews/analyze", json={
         "company": "Mobily", "metric": "revenue", "currency": "SAR",
         "unit": "thousands", "start_year": 2024, "end_year": 2025,
@@ -96,6 +101,7 @@ def test_unauthenticated_requests_fail_before_ledger_access():
     client, ledger = make_client(authenticated=False)
     for method, path, kwargs in [
         ("get", "/financial-reviews/status", {}),
+        ("get", "/financial-reviews/selections", {}),
         ("post", "/financial-reviews/selections", {"json": sample_selection()}),
         ("post", "/financial-reviews/selections/7/approve", {"json": sample_decision()}),
         ("post", "/financial-reviews/selections/7/reject", {}),
@@ -120,6 +126,7 @@ def test_per_action_policy_denials_do_not_reach_ledger():
         "company": "Mobily", "metric": "revenue", "currency": "SAR",
         "unit": "thousands", "start_year": 2024, "end_year": 2025,
     }).status_code == 403
+    assert client.get("/financial-reviews/selections").status_code == 403
     assert ledger.calls == [("status",)]
 
 
@@ -146,3 +153,9 @@ def test_strict_payloads_and_workspace_mismatch_fail_closed():
     assert ledger.calls == []
 
 
+
+def test_queue_limit_rejects_invalid_input():
+    client, ledger = make_client()
+    assert client.get("/financial-reviews/selections?limit=0").status_code == 422
+    assert client.get("/financial-reviews/selections?limit=101").status_code == 422
+    assert ledger.calls == []
