@@ -13,7 +13,7 @@ ledger. No production migration or public route installation is performed.
    **independent** `view_evidence` permission. It only returns exact
    indexed chunk text (up to 8192 characters) and citation identity.
    The ledger revalidates the active document and original offsets.
-4. Optionally configure `pdf_bytes_provider(document_id, version_id)`
+4. Optionally configure `pdf_bytes_provider(principal, workspace_id, document_id, version_id)`
    when constructing the HTTP router. With a trusted provider only,
    `GET /financial-reviews/selections/{id}/original-pdf` requires
    **independent** `view_pdf` permission and returns the original
