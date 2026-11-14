@@ -204,6 +204,45 @@ class PostgresFinancialReviewLedger:
     def reject(self, item_id: int, *, reviewer_id: str) -> None:
         self._decide(item_id, reviewer_id, None)
 
+    def pending(self, *, limit: int = 50) -> list[dict[str, object]]:
+        """Return bounded, source-checked queue metadata for human review.
+
+        Never infers row, year, unit, or financial meaning from a number.
+        An invalidated source fails the entire request closed.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise AnalyticsInputError("invalid pending review limit")
+        with self._transaction() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT id, workspace_id, document_id, version_id,
+                              source_sha256, source_path, page_number,
+                              chunk_id, start_char, end_char, amount
+                       FROM nexus_financial_reviews
+                       WHERE workspace_id = %s AND state = 'PENDING'
+                       ORDER BY id LIMIT %s""",
+                    (self.workspace_id, limit),
+                )
+                rows = cursor.fetchall()
+        output = []
+        for row in rows:
+            source = _verify_source(
+                _selection_from_row(row), repository=self._collection,
+                workspace_id=self.workspace_id,
+            )
+            output.append({
+                "id": row[0],
+                "document_id": source.document_id,
+                "version_id": source.document_version_id,
+                "page_number": source.page_number,
+                "amount": source.amount,
+                "citation": _selection_from_row(row).citation,
+                "state": "PENDING",
+                "requires_visual_review": True,
+                "automatically_verified_financial_fact": False,
+            })
+        return output
+
     def status(self) -> dict[str, object]:
         with self._transaction() as conn:
             with conn.cursor() as cursor:
