@@ -59,7 +59,7 @@ def client_for(*, raw=None, grants=None, provider=None, authenticated=True):
             workspace == "tenant" and action in grants
         ),
         pdf_bytes_provider=provider if provider is not None else
-                           (lambda doc_id, version_id: raw),
+                           (lambda principal, workspace, doc_id, version_id: raw),
     ))
     return TestClient(app), ledger, raw
 
@@ -78,8 +78,8 @@ def test_valid_original_pdf_is_attachment_and_never_claims_visual_review():
 
 def test_independent_document_grant_and_auth_deny_provider_access():
     calls = []
-    def provider(doc, version):
-        calls.append((doc, version))
+    def provider(principal, workspace, doc, version):
+        calls.append((principal.subject, workspace, doc, version))
         return generated_pdf()
     client, _, _ = client_for(grants={"view_evidence"}, provider=provider)
     assert client.get("/financial-reviews/selections/7/original-pdf").status_code == 403
@@ -91,14 +91,14 @@ def test_independent_document_grant_and_auth_deny_provider_access():
 def test_invalid_or_mismatched_original_pdf_denied():
     raw = generated_pdf()
     for invalid in (b"not a PDF", b"%PDF-broken", generated_pdf() + b"modified"):
-        client, _, _ = client_for(raw=raw, provider=lambda doc, version: invalid)
+        client, _, _ = client_for(raw=raw, provider=lambda principal, workspace, doc, version: invalid)
         response = client.get("/financial-reviews/selections/7/original-pdf")
         assert response.status_code == 422
         assert "original" in response.text.lower()
 
 
 def test_untrusted_provider_failure_is_generic_503():
-    def failed(doc, version):
+    def failed(principal, workspace, doc, version):
         raise RuntimeError("secret-private-path")
     client, _, _ = client_for(provider=failed)
     response = client.get("/financial-reviews/selections/7/original-pdf")
@@ -132,3 +132,12 @@ def test_opt_in_route_is_absent_without_pdf_provider():
     response = TestClient(app).get(
         "/financial-reviews/selections/1/original-pdf")
     assert response.status_code == 404
+
+def test_pdf_provider_receives_trusted_identity_and_workspace():
+    observed = []
+    def provider(principal, workspace, doc_id, version_id):
+        observed.append((principal.subject, workspace, doc_id, version_id))
+        return generated_pdf()
+    client, _, _ = client_for(provider=provider)
+    assert client.get("/financial-reviews/selections/7/original-pdf").status_code == 200
+    assert observed == [("reviewer", "tenant", "annual", "v1")]
