@@ -70,6 +70,19 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
 <button type="button" id="reject" disabled>Reject selection</button>
 </form>
 </section>
+<section><h2>Reviewed financial analysis</h2>
+<p class="muted">Only explicitly approved figures are included. Values are displayed as exact decimal strings; no currency conversion or inferred accounting relationships.</p>
+<form id="analysisForm">
+<label>Company <input id="analysisCompany" maxlength="160" required></label>
+<label>Metric <select id="analysisMetric"><option value="revenue">Revenue</option><option value="net_income">Net income</option><option value="operating_income">Operating income</option><option value="assets">Assets</option><option value="liabilities">Liabilities</option><option value="equity">Equity</option><option value="cash_flow">Cash flow</option></select></label>
+<label>Currency <select id="analysisCurrency"><option>SAR</option><option>USD</option><option>EUR</option><option>GBP</option><option>JOD</option><option>AED</option><option>QAR</option></select></label>
+<label>Unit <select id="analysisUnit"><option>ones</option><option>thousands</option><option>millions</option><option>billions</option></select></label>
+<label>From year <input id="analysisStart" type="number" min="1900" max="2100" required></label>
+<label>To year <input id="analysisEnd" type="number" min="1900" max="2100" required></label>
+<button id="runAnalysis" type="submit">Analyze approved figures</button>
+</form>
+<div id="analysisResults" aria-live="polite"></div>
+</section>
 <script nonce="__NONCE__">
 "use strict";
 (function () {
@@ -125,6 +138,69 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     }
     message("Loaded " + data.items.length + " pending items.");
   }
+  function showAnalysis(data) {
+    const target = el("analysisResults");
+    target.replaceChildren();
+    const intro = document.createElement("p");
+    intro.textContent = "Reviewed facts: " + data.unique_financial_facts +
+      " · " + data.company + " · " + data.metric + " · " + data.currency + " " + data.unit;
+    target.appendChild(intro);
+    const table = document.createElement("table");
+    const header = document.createElement("tr");
+    for (const label of ["Year", "Amount (exact decimal)", "YoY %", "Citations"]) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.textContent = label;
+      header.appendChild(cell);
+    }
+    table.appendChild(header);
+    for (const row of data.annual || []) {
+      const tr = document.createElement("tr");
+      const provenance = (data.provenance || []).find(
+        item => item.year === row.year && item.amount === row.amount
+      );
+      const sources = provenance && Array.isArray(provenance.citations)
+        ? provenance.citations.map(c => c.document_id + " p." + c.page_number).join("; ")
+        : "No citation returned";
+      for (const value of [
+        row.year, row.amount,
+        row.yoy_percent === null ? (row.yoy_unavailable_reason || "Not available") : row.yoy_percent,
+        sources
+      ]) {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        tr.appendChild(cell);
+      }
+      table.appendChild(tr);
+    }
+    target.appendChild(table);
+    const note = document.createElement("p");
+    note.textContent = data.provenance_policy || "Source relationships require human review.";
+    target.appendChild(note);
+  }
+  el("analysisForm").addEventListener("submit", async evt => {
+    evt.preventDefault();
+    const start = Number(el("analysisStart").value);
+    const end = Number(el("analysisEnd").value);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) {
+      message("Select a valid chronological year range."); return;
+    }
+    try {
+      el("analysisResults").replaceChildren();
+      const data = await request("analyze", "POST", {
+        company: el("analysisCompany").value.trim(),
+        metric: el("analysisMetric").value,
+        currency: el("analysisCurrency").value,
+        unit: el("analysisUnit").value,
+        start_year: start, end_year: end
+      });
+      showAnalysis(data);
+      message("Reviewed financial analysis loaded.");
+    } catch (e) {
+      el("analysisResults").replaceChildren();
+      message(e.message);
+    }
+  });
   el("connect").addEventListener("click", async () => {
     token = el("token").value.trim();
     el("token").value = "";
@@ -134,6 +210,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     token = "";
     el("token").value = "";
     el("queue").replaceChildren();
+    el("analysisResults").replaceChildren();
     clearSelection();
     message("Reviewer token cleared.");
   });
