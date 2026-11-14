@@ -26,6 +26,11 @@ class StubLedger:
         self.calls.append(("pending", limit))
         return [{"id": 7, "requires_visual_review": True}]
 
+    def evidence(self, item_id):
+        self.calls.append(("evidence", item_id))
+        return {"id": item_id, "evidence_kind": "INDEXED_TEXT_ONLY",
+                "original_pdf_visually_checked": False}
+
     def status(self):
         self.calls.append(("status",))
         return {"pending": 1, "approved": 0, "rejected": 0}
@@ -38,7 +43,7 @@ class StubLedger:
 def make_client(*, authenticated=True, permissions=None, ledger=None):
     ledger = ledger or StubLedger()
     permissions = permissions if permissions is not None else {
-        "submit", "approve", "reject", "status", "analyze", "list",
+        "submit", "approve", "reject", "status", "analyze", "list", "view_evidence",
     }
     app = FastAPI()
     app.include_router(create_financial_review_router(
@@ -91,6 +96,9 @@ def test_bounded_api_review_lifecycle_and_trusted_reviewer():
     assert ("reject", 8, "trusted-reviewer") in ledger.calls
     assert client.get("/financial-reviews/status").status_code == 200
     assert client.get("/financial-reviews/selections?limit=2").json()["items"][0]["id"] == 7
+    evidence = client.get("/financial-reviews/selections/7/evidence")
+    assert evidence.status_code == 200
+    assert evidence.json()["original_pdf_visually_checked"] is False
     assert client.post("/financial-reviews/analyze", json={
         "company": "Mobily", "metric": "revenue", "currency": "SAR",
         "unit": "thousands", "start_year": 2024, "end_year": 2025,
@@ -102,6 +110,7 @@ def test_unauthenticated_requests_fail_before_ledger_access():
     for method, path, kwargs in [
         ("get", "/financial-reviews/status", {}),
         ("get", "/financial-reviews/selections", {}),
+        ("get", "/financial-reviews/selections/7/evidence", {}),
         ("post", "/financial-reviews/selections", {"json": sample_selection()}),
         ("post", "/financial-reviews/selections/7/approve", {"json": sample_decision()}),
         ("post", "/financial-reviews/selections/7/reject", {}),
@@ -127,6 +136,7 @@ def test_per_action_policy_denials_do_not_reach_ledger():
         "unit": "thousands", "start_year": 2024, "end_year": 2025,
     }).status_code == 403
     assert client.get("/financial-reviews/selections").status_code == 403
+    assert client.get("/financial-reviews/selections/7/evidence").status_code == 403
     assert ledger.calls == [("status",)]
 
 
@@ -159,3 +169,11 @@ def test_queue_limit_rejects_invalid_input():
     assert client.get("/financial-reviews/selections?limit=0").status_code == 422
     assert client.get("/financial-reviews/selections?limit=101").status_code == 422
     assert ledger.calls == []
+
+def test_indexed_evidence_has_independent_permission():
+    client, ledger = make_client(permissions={"view_evidence"})
+    response = client.get("/financial-reviews/selections/7/evidence")
+    assert response.status_code == 200
+    assert response.json()["evidence_kind"] == "INDEXED_TEXT_ONLY"
+    assert client.get("/financial-reviews/selections").status_code == 403
+    assert ledger.calls == [("evidence", 7)]
