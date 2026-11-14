@@ -205,6 +205,14 @@ def test_real_chromium_review_workflow(running_server):
             analysis = page.locator("#analysisResults")
             assert analysis.get_by_text("19641705").count() == 1
             assert analysis.get_by_text("sample-2025 p.1").count() == 1
+            with page.expect_download() as reviewed_csv:
+                page.locator("#downloadCsv").click()
+            download = reviewed_csv.value
+            assert download.suggested_filename == "reviewed-financial-analysis.csv"
+            body = download.path().read_bytes().decode("utf-8-sig")
+            assert "19641705" in body
+            assert "sample-2025" in body
+            assert "2025" in body
 
             page.locator("#queue button").first.click()
             page.get_by_role("status").get_by_text(
