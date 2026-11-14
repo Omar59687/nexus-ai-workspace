@@ -129,6 +129,23 @@ class FinancialEvidenceAnalyticsTests(unittest.TestCase):
         with self.assertRaisesRegex(AnalyticsInputError, "exact stated amount"):
             self.analyze([item])
 
+    def test_positive_claim_rejected_for_negative_or_longer_source_number(self):
+        item = self.observation("annual25", 2025, "19641705")
+        original = self.repo.indexes["annual25"]
+        for text in ("FY2025 revenue -19,641,705",
+                     "FY2025 revenue 19,641,705.5",
+                     "FY2025 revenue 119,641,705"):
+            with self.subTest(text=text):
+                self.repo.indexes["annual25"] = SimpleNamespace(
+                    document=SimpleNamespace(**{**vars(original.document),
+                        "pages": (ExtractedPage(140, text),)}),
+                    chunks=(replace(original.chunks[0], text=text,
+                                    end_char=len(text)),),
+                )
+                with self.assertRaisesRegex(AnalyticsInputError, "exact stated amount"):
+                    self.analyze([replace(item, end_char=len(text))])
+        self.repo.indexes["annual25"] = original
+
     def test_conflicting_totals_not_summed(self):
         old = self.repo.indexes["segment25"]
         updated = "2025 segment total 19,641,706"
