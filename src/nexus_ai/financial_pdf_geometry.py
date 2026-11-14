@@ -14,6 +14,7 @@ import json
 import math
 import sys
 from io import BytesIO
+from pathlib import Path
 
 from nexus_ai.data_analytics import AnalyticsInputError
 from nexus_ai.documents.pdf_worker import (
@@ -45,6 +46,9 @@ def extract_pdf_positions(
     if (not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool)
             or not math.isfinite(timeout_seconds) or not 1 <= timeout_seconds <= 120):
         raise AnalyticsInputError("invalid worker time budget")
+    if (type(memory_limit_bytes) is not int or not 256 * 1024 * 1024 <= memory_limit_bytes <= 2 * 1024 * 1024 * 1024
+            or type(cpu_limit_seconds) is not int or not 1 <= cpu_limit_seconds <= 120):
+        raise AnalyticsInputError("invalid PDF worker resource budget")
     _require_platform_limits()
     args = [
         sys.executable, "-m", "nexus_ai.financial_pdf_geometry",
@@ -58,7 +62,7 @@ def extract_pdf_positions(
         max_output_bytes=5 * max_boxes_per_page * 800 + 8192,
         memory_limit_bytes=memory_limit_bytes,
         cpu_limit_seconds=cpu_limit_seconds,
-        python_path=__file__,
+        python_path=str(Path(__file__).resolve().parents[1]),
     )
     try:
         report = json.loads(encoded.decode("utf-8"))
