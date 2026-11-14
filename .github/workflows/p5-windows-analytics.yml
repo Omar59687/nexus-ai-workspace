@@ -5,6 +5,10 @@ on:
       - feature/p5-review-evidence-workflow
   workflow_dispatch:
 
+concurrency:
+  group: p5-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
