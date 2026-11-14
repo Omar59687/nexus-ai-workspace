@@ -72,6 +72,7 @@ def reconstruct_financial_rows(
     canonical = []
     unmatched = 0
     unmatched_numeric = 0
+    unanchored_fragments = []
     for box in boxes:
         if not isinstance(box, PositionedText) or box.page_number != page_number:
             raise AnalyticsInputError("positioned-text page identity mismatch")
@@ -90,6 +91,7 @@ def reconstruct_financial_rows(
         if not anchored and parsed is not None:
             anchored = _evidence_contains_amount(page.text, parsed)
         if not anchored:
+            unanchored_fragments.append(raw_text)
             unmatched += 1
             if parsed is not None:
                 unmatched_numeric += 1
@@ -107,6 +109,10 @@ def reconstruct_financial_rows(
             headers.append((x, y, int(years[0])))
     lexical_diagnostics = financial_signal_diagnostics(
         page.text, tuple(value for _, _, value in canonical)
+    )
+    lexical_diagnostics["unanchored_fragment_lexical_hints"] = (
+        financial_signal_diagnostics("", tuple(unanchored_fragments))
+        ["positioned_fragment_lexical_hints"]
     )
     evidence_signals = {
         "anchored_year_headers": len(headers),
