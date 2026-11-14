@@ -17,6 +17,7 @@ from nexus_ai.financial_review_adapter import (
     AuthorizedFinancialReviewAdapter, ReviewPrincipal,
 )
 from nexus_ai.financial_review_workflow import ReviewDecision, ReviewSelection, _require_text
+from nexus_ai.financial_review_pdf import make_review_pdf_attachment
 
 
 class NumericCitationPayload(BaseModel):
@@ -65,6 +66,7 @@ def create_financial_review_router(
     ledger_factory: Callable[[], object],
     authenticate_request: Callable[[Request], ReviewPrincipal],
     authorize: Callable[[ReviewPrincipal, str, str], bool],
+    pdf_bytes_provider: Callable[[str, str], bytes] | None = None,
 ) -> APIRouter:
     """Construct routes only after a trusted host explicitly configures them.
 
@@ -118,6 +120,37 @@ def create_financial_review_router(
     @router.get("/selections/{item_id}/evidence")
     def get_evidence(item_id: int, adapter=Depends(get_adapter)):
         return protected(adapter, lambda: adapter.evidence(item_id))
+
+    if pdf_bytes_provider is not None:
+        if not callable(pdf_bytes_provider):
+            raise ValueError("trusted PDF bytes provider required")
+
+        @router.get("/selections/{item_id}/original-pdf")
+        def original_pdf(item_id: int, adapter=Depends(get_adapter)):
+            # This permission is independent from queue and indexed-text
+            # access. A trusted provider must enforce document-level grants.
+            source = protected(adapter, lambda: adapter.authorize_pdf(item_id))
+            try:
+                contents = pdf_bytes_provider(
+                    source["document_id"], source["version_id"],
+                )
+                # Revalidate active source after accessing original bytes.
+                current = protected(adapter, lambda: adapter.authorize_pdf(item_id))
+                if current["citation"] != source["citation"]:
+                    raise AnalyticsInputError("source version changed")
+                return make_review_pdf_attachment(
+                    indexed_evidence=current, pdf_bytes=contents,
+                )
+            except AnalyticsInputError as exc:
+                raise HTTPException(
+                    status_code=422, detail="Original PDF evidence unavailable",
+                ) from exc
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503, detail="Original PDF provider unavailable",
+                ) from exc
 
     @router.post("/selections", status_code=201)
     def submit(payload: ReviewSubmissionPayload, adapter=Depends(get_adapter)):
