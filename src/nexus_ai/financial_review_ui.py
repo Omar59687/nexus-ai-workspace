@@ -80,6 +80,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
 <label>From year <input id="analysisStart" type="number" min="1900" max="2100" required></label>
 <label>To year <input id="analysisEnd" type="number" min="1900" max="2100" required></label>
 <button id="runAnalysis" type="submit">Analyze approved figures</button>
+<button id="downloadCsv" type="button" disabled>Download reviewed CSV</button>
 </form>
 <div id="analysisResults" aria-live="polite"></div>
 </section>
@@ -90,6 +91,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
   let token = "";
   let sessionGeneration = 0;
   let selected = null;
+  let lastAnalysisPayload = null;
   const message = msg => { el("status").textContent = String(msg); };
   const clearSelection = () => {
     selected = null;
@@ -196,19 +198,45 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     }
     try {
       el("analysisResults").replaceChildren();
-      const data = await request("analyze", "POST", {
+      el("downloadCsv").disabled = true;
+      lastAnalysisPayload = null;
+      const payload = {
         company: el("analysisCompany").value.trim(),
         metric: el("analysisMetric").value,
         currency: el("analysisCurrency").value,
         unit: el("analysisUnit").value,
         start_year: start, end_year: end
-      });
+      };
+      const data = await request("analyze", "POST", payload);
       showAnalysis(data);
+      lastAnalysisPayload = payload;
+      el("downloadCsv").disabled = false;
       message("Reviewed financial analysis loaded.");
     } catch (e) {
       el("analysisResults").replaceChildren();
+      lastAnalysisPayload = null;
+      el("downloadCsv").disabled = true;
       message(e.message);
     }
+  });
+  el("analysisForm").addEventListener("input", () => {
+    lastAnalysisPayload = null;
+    el("downloadCsv").disabled = true;
+  });
+  el("downloadCsv").addEventListener("click", async () => {
+    if (lastAnalysisPayload === null) { return; }
+    try {
+      const blob = await request("analyze/export.csv", "POST", lastAnalysisPayload, true);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "reviewed-financial-analysis.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      message("Reviewed financial CSV download requested.");
+    } catch (e) { message(e.message); }
   });
   el("connect").addEventListener("click", async () => {
     sessionGeneration++;
@@ -216,6 +244,8 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     el("token").value = "";
     el("queue").replaceChildren();
     el("analysisResults").replaceChildren();
+    lastAnalysisPayload = null;
+    el("downloadCsv").disabled = true;
     clearSelection();
     const generation = sessionGeneration;
     try { await refresh(); } catch (e) {
