@@ -30,7 +30,7 @@ class FinancialAnalyticsTests(unittest.TestCase):
         self.assertEqual(result["rows_selected"], 2)
         self.assertEqual([r["amount"] for r in result["annual"]],
                          ["18206447", "19641705"])
-        self.assertEqual(result["annual"][1]["yoy_percent"], "7.8827")
+        self.assertEqual(result["annual"][1]["yoy_percent"], "7.8832")
         self.assertEqual(result["chart"]["y_axis"], "SAR thousands")
         self.assertEqual(result["chart"]["data"][1]["value"], "19641705")
 
