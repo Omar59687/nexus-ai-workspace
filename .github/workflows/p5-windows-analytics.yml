@@ -1,0 +1,42 @@
+name: Phase 5 Windows-hosted deterministic analytics
+on:
+  push:
+    branches:
+      - feature/p5-review-evidence-workflow
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-analytics:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}\src;${{ github.workspace }}
+      PYTHONIOENCODING: utf-8
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bounded analytics test dependencies
+        run: |
+          python -m pip install "pytest>=8,<9" "pandas>=2.2,<3" "openpyxl>=3.1,<4" "fastapi>=0.115,<1" "httpx>=0.27,<1"
+      - name: Windows deterministic CSV XLSX chart and export regressions
+        run: |
+          python -m pytest -q tests/test_data_analytics.py tests/test_financial_analytics.py tests/test_financial_charts.py tests/test_financial_review_export.py tests/test_p5_analytics_measurement.py
+      - name: Report-only Windows-hosted measurement
+        run: |
+          python scripts/measure_p5_analytics.py --rows 5000 > p5-windows-hosted.json
+          python -c "import json; d=json.load(open('p5-windows-hosted.json',encoding='utf-8')); assert d['rows']==5000 and all(d['measurements'][t]['total_decimal']=='44985' for t in ('csv','xlsx')); print('Windows-hosted synthetic analytics measurement verified')"
+      - name: Store synthetic performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-windows-hosted-analytics
+          path: p5-windows-hosted.json
+          if-no-files-found: ignore
+          retention-days: 7
