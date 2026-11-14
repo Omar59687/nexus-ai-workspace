@@ -14,6 +14,7 @@ import math
 from dataclasses import dataclass
 
 from nexus_ai.data_analytics import AnalyticsInputError
+from nexus_ai.financial_arabic_signals import normalize_arabic
 from nexus_ai.financial_arabic_signals import financial_signal_diagnostics
 from nexus_ai.financial_evidence_analytics import _evidence_contains_amount
 from nexus_ai.financial_table_candidates import _LABELS, _UNITS, _parse_amount, _latin_digits, _YEAR
@@ -99,10 +100,20 @@ def reconstruct_financial_rows(
         canonical.append((x, y, raw_text))
     units = []
     headers = []
+    # Only full unit phrases are eligible for row attribution. Lexical
+    # signals such as isolated "riyals" or "thousands" remain diagnostic.
+    unit_phrases = {
+        **{normalize_arabic(k): v for k, v in _UNITS.items()},
+        "الاف الريالات السعودية": ("SAR", "thousands"),
+        "بالالاف من الريالات السعودية": ("SAR", "thousands"),
+        "بملايين الريالات السعودية": ("SAR", "millions"),
+        "ملايين الريالات السعودية": ("SAR", "millions"),
+    }
     for x, y, value in canonical:
-        matches = [unit for term, unit in _UNITS.items() if term.casefold() in value.casefold()]
-        if matches:
-            units.append((y, *matches[0]))
+        normalized_value = normalize_arabic(value)
+        matches = {unit for term, unit in unit_phrases.items() if term in normalized_value}
+        if len(matches) == 1:
+            units.append((y, *next(iter(matches))))
         years = _YEAR.findall(_latin_digits(value))
         if len(years) == 1 and (_latin_digits(value.strip()) == years[0] or
                                 value.casefold().strip() == ("year: " + years[0])):
@@ -119,7 +130,7 @@ def reconstruct_financial_rows(
         "anchored_unit_labels": len(units),
         "anchored_metric_labels": sum(
             1 for _, _, value in canonical
-            if any(value.casefold() in {form.casefold() for form in forms}
+            if any(normalize_arabic(value) in {normalize_arabic(form) for form in forms}
                    for forms in _LABELS.values())
         ),
         "anchored_numeric_fragments": sum(
@@ -133,7 +144,7 @@ def reconstruct_financial_rows(
     all_chunks = [c for c in indexed.chunks if c.page_number == page_number]
     for lx, ly, label in canonical:
         metrics = [metric for metric, forms in _LABELS.items()
-                   if label.casefold() in {f.casefold() for f in forms}]
+                   if normalize_arabic(label) in {normalize_arabic(f) for f in forms}]
         if len(metrics) != 1:
             continue
         numbers = [(x, y, raw, _parse_amount(raw)) for x, y, raw in canonical
