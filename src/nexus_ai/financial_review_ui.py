@@ -151,7 +151,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       message("Original PDF download requested. Inspect the cited page manually.");
     } catch (e) { message(e.message); }
   });
