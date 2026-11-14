@@ -151,6 +151,39 @@ approvals, a durable reviewed-facts store, authenticated HTTP integration, or
 an end-to-end 150-PDF financial benchmark. Do not treat this as completed
 financial statement parsing or finished Phase 5.
 
+## Slice D — Strict PDF-text financial row candidates
+
+`src/nexus_ai/financial_table_candidates.py` now inspects **active indexed
+document chunks**, not arbitrary filenames or model-generated snippets.
+Only an explicitly structured, two-cell row such as `Total revenue |
+19,641,705` or `إجمالي الإيرادات<TAB>١٩٬٦٤١٬٧٠٥`, following a
+**single-year, single-currency/unit** header inside the same chunk, produces
+a candidate. It carries the workspace, document, version, source hash,
+page, chunk, and line-character offsets. The source version is checked
+again after extraction. The module is an opt-in backend service, **not**
+a public HTTP route, PDF visual-layout parser, or approved fact generator.
+
+Every candidate is marked `HUMAN_ROW_REVIEW_REQUIRED`; the response
+always reports `automatically_verified_financial_facts: 0`. Multi-year
+columns, missing or ambiguous headers, malformed numerics, label variants
+that are not in the bounded lexicon, and unstructured Arabic PDF extraction
+**abstain** rather than infer a row from nearby keywords. A document's
+financial row can be visible in the PDF but impossible to infer from the
+plain pypdf text order, as the earlier Mobily acceptance showed.
+
+The candidate's line-character offsets locate a candidate **inside** an
+indexed chunk. They are **not directly interchangeable** with the
+`ReviewedFinancialObservation` whole-chunk offset contract. A separate,
+authorized human-review adapter must connect them, verify the financial
+row visually, and cite a valid source chunk. No human review assertion is
+created automatically.
+
+This is deliberately a narrow, high-precision parser to establish
+safe behavior and measurable abstention. It does not yet provide usable
+automatic extraction for complex real annual-report tables. Extending it
+requires positional table reconstruction, independent real-document
+annotations, and negative controls for year/currency/metric ambiguity.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
@@ -160,7 +193,7 @@ financial statement parsing or finished Phase 5.
   regression in `.github/workflows/p5-analytics-acceptance.yml`.
 - No model calls, hosted writes, PRs or merge to `main`.
 
-**Remaining Phase 5 work:** automatic table-row parsing, durable reviewed
+**Remaining Phase 5 work:** position-aware real-PDF table extraction, durable reviewed
 observation lifecycle, authorization/API integration, real workload
 performance and formal full-repository quality gate. Slice A/B tests alone do not make Phase 5
 production-complete.
