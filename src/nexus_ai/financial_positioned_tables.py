@@ -104,6 +104,18 @@ def reconstruct_financial_rows(
         if len(years) == 1 and (_latin_digits(value.strip()) == years[0] or
                                 value.casefold().strip() == ("year: " + years[0])):
             headers.append((x, y, int(years[0])))
+    evidence_signals = {
+        "anchored_year_headers": len(headers),
+        "anchored_unit_labels": len(units),
+        "anchored_metric_labels": sum(
+            1 for _, _, value in canonical
+            if any(value.casefold() in {form.casefold() for form in forms}
+                   for forms in _LABELS.values())
+        ),
+        "anchored_numeric_fragments": sum(
+            1 for _, _, value in canonical if _parse_amount(value) is not None
+        ),
+    }
     candidates = []
     ambiguous_row_detected = False
     abstentions = {"no_unambiguous_header": 0, "no_unambiguous_row": 0,
@@ -189,6 +201,7 @@ def reconstruct_financial_rows(
         "status": "CANDIDATES_FOR_REVIEW" if candidates else "ABSTAIN_POSITIONAL_AMBIGUITY",
         "candidate_count": len(candidates), "candidates": candidates,
         "abstentions": abstentions, "automatically_verified_financial_facts": 0,
+        "evidence_signals": evidence_signals,
         "source_binding": {"positioned_fragments_total": len(boxes),
                            "source_anchored_fragments": len(canonical),
                            "unmatched_fragments_skipped": unmatched,
