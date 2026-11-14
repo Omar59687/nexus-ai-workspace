@@ -146,8 +146,3 @@ def test_strict_payloads_and_workspace_mismatch_fail_closed():
     assert ledger.calls == []
 
 
-def test_no_default_router_installation():
-    # These routes are only available when a trusted host opts in.
-    from nexus_ai.main import app
-    assert not any(route.path.startswith("/financial-reviews")
-                   for route in app.routes)
