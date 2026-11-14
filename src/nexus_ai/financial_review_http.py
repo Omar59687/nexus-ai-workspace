@@ -115,6 +115,10 @@ def create_financial_review_router(
     def list_pending(limit: int = Query(default=50, ge=1, le=100), adapter=Depends(get_adapter)):
         return {"items": protected(adapter, lambda: adapter.pending(limit=limit))}
 
+    @router.get("/selections/{item_id}/evidence")
+    def get_evidence(item_id: int, adapter=Depends(get_adapter)):
+        return protected(adapter, lambda: adapter.evidence(item_id))
+
     @router.post("/selections", status_code=201)
     def submit(payload: ReviewSubmissionPayload, adapter=Depends(get_adapter)):
         citation = payload.citation.model_dump()
