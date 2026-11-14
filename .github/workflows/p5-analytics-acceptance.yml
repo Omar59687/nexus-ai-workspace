@@ -5,6 +5,7 @@ on:
     branches:
       - feature/p5-bounded-data-analytics
       - feature/p5-authorized-review-adapter
+      - feature/p5-review-evidence-workflow
   workflow_dispatch:
 
 permissions:
