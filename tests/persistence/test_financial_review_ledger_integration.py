@@ -12,7 +12,8 @@ from nexus_ai.financial_review_persistence import (
     FINANCIAL_REVIEW_SCHEMA_DDL, PostgresFinancialReviewLedger,
 )
 from tests.persistence.test_postgres_integration import (
-    PostgresLiveIntegrationTests, _create_test_schema, _drop_test_schema,
+    PostgresLiveIntegrationTests as _P4LiveIntegrationGuard,
+    _create_test_schema, _drop_test_schema,
 )
 from tests.test_financial_review_workflow import Repo, selection, decision, indexed
 
@@ -22,7 +23,7 @@ class FinancialReviewLedgerLiveTests(unittest.TestCase):
     def setUpClass(cls):
         # Reuse the exact catalog-emptiness, loopback-only and disposable-DB
         # checks from Phase 4; do not weaken its operational guardrails.
-        PostgresLiveIntegrationTests.setUpClass.__func__(cls)
+        _P4LiveIntegrationGuard.setUpClass.__func__(cls)
 
     def setUp(self):
         self._schema = _create_test_schema(self._psycopg, self._base_params)
