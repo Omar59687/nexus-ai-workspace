@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/p5-bounded-data-analytics
+      - feature/p5-authorized-review-adapter
   workflow_dispatch:
 
 permissions:
@@ -43,7 +44,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "pytest>=8,<9" "psycopg[binary]>=3.2,<4" "pypdf>=6,<8" "pydantic>=2,<3" "pandas>=2.2,<3" "openpyxl>=3.1,<4"
       - name: Phase 5 deterministic CSV and XLSX analytics
-        run: python -m pytest -q tests/test_data_analytics.py tests/test_financial_analytics.py tests/test_financial_charts.py tests/test_financial_evidence_analytics.py tests/test_financial_table_candidates.py tests/test_financial_positioned_tables.py tests/test_financial_pdf_geometry.py tests/test_financial_arabic_signals.py tests/test_financial_pdf_layout_diagnostics.py tests/test_financial_geometry_review.py tests/test_financial_review_workflow.py tests/test_financial_review_end_to_end.py
+        run: python -m pytest -q tests/test_data_analytics.py tests/test_financial_analytics.py tests/test_financial_charts.py tests/test_financial_evidence_analytics.py tests/test_financial_table_candidates.py tests/test_financial_positioned_tables.py tests/test_financial_pdf_geometry.py tests/test_financial_arabic_signals.py tests/test_financial_pdf_layout_diagnostics.py tests/test_financial_geometry_review.py tests/test_financial_review_workflow.py tests/test_financial_review_end_to_end.py tests/test_financial_review_adapter.py
       - name: Phase 4 retrieval and financial regressions
         run: |
           python -m pytest -q \
