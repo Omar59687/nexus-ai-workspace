@@ -11,7 +11,7 @@ repeated labels, mismatched source chunks, or missing unit labels abstain.
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from nexus_ai.data_analytics import AnalyticsInputError
 from nexus_ai.financial_evidence_analytics import _evidence_contains_amount
@@ -69,15 +69,31 @@ def reconstruct_financial_rows(
     if page is None:
         raise AnalyticsInputError("selected source page not indexed")
     canonical = []
+    unmatched = 0
+    unmatched_numeric = 0
     for box in boxes:
         if not isinstance(box, PositionedText) or box.page_number != page_number:
             raise AnalyticsInputError("positioned-text page identity mismatch")
         x, y = _coordinate(box.x), _coordinate(box.y)
         if not isinstance(box.text, str) or not box.text.strip() or len(box.text) > 400:
             raise AnalyticsInputError("invalid positioned-text content")
-        if box.text not in page.text:
-            raise AnalyticsInputError("positioned text not present in indexed source page")
-        canonical.append((x, y, box.text.strip()))
+        # pypdf visitor fragments and extract_text() can differ because of
+        # whitespace grouping, RTL order and font glyph encoding. Do not abort
+        # the entire page when a fragment is not independently source-backed.
+        # An unmatched numeric glyph must never become a financial candidate.
+        raw_text = box.text.strip()
+        normalized_fragment = _latin_digits(raw_text)
+        normalized_page = _latin_digits(page.text)
+        anchored = raw_text in page.text or normalized_fragment in normalized_page
+        parsed = _parse_amount(raw_text)
+        if not anchored and parsed is not None:
+            anchored = _evidence_contains_amount(page.text, parsed)
+        if not anchored:
+            unmatched += 1
+            if parsed is not None:
+                unmatched_numeric += 1
+            continue
+        canonical.append((x, y, raw_text))
     units = []
     headers = []
     for x, y, value in canonical:
@@ -173,5 +189,9 @@ def reconstruct_financial_rows(
         "status": "CANDIDATES_FOR_REVIEW" if candidates else "ABSTAIN_POSITIONAL_AMBIGUITY",
         "candidate_count": len(candidates), "candidates": candidates,
         "abstentions": abstentions, "automatically_verified_financial_facts": 0,
+        "source_binding": {"positioned_fragments_total": len(boxes),
+                           "source_anchored_fragments": len(canonical),
+                           "unmatched_fragments_skipped": unmatched,
+                           "unmatched_numeric_fragments_skipped": unmatched_numeric},
         "geometry_source": "caller_supplied_requires_independent_approved_pdf_worker",
     }
