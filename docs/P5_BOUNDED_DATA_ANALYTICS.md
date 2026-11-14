@@ -234,6 +234,22 @@ does not use skipped fragments to create candidates or change the rule
 that reviewed facts require human confirmation. This follow-up
 still requires a new owner-side real-PDF run to assess usefulness.
 
+The second owner-side Mobily run (commit `b983fbb`) recovered
+**62/174** source-anchored fragments on page 140 and **89/263** on page
+142. It recognized **16 and 24 year-like positioned fragments**, and
+**40 and 69 numeric fragments**, respectively, but **zero matched
+whole-phrase metric labels or unit headings on both pages**. No financial
+row candidate was generated, correctly.
+
+The next diagnostic extension distinguishes whether revenue, total,
+thousands/millions and currency words appear in the **full indexed page
+text**, **source-anchored position fragments**, or **unanchored PDF font
+fragments**. Unanchored fragments are *never* promoted into trusted
+citations or accepted facts; these counts only help locate the Arabic
+font/layout failure. When source-anchored phrase geometry remains
+insufficient, the extractor continues to abstain rather than assuming
+that nearby values belong to a certain metric or year.
+
 The report contains **only diagnostics and candidate counts**, not
 financial values or page text. A passing program exit status means
 diagnostic execution succeeded, not that table interpretation passed.
