@@ -129,6 +129,6 @@ def test_opt_in_route_is_absent_without_pdf_provider():
         authenticate_request=lambda request: ReviewPrincipal("reviewer"),
         authorize=lambda *args: True,
     ))
-    assert "/financial-reviews/selections/{item_id}/original-pdf" not in {
-        route.path for route in app.routes
-    }
+    response = TestClient(app).get(
+        "/financial-reviews/selections/1/original-pdf")
+    assert response.status_code == 404
