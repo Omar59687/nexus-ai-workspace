@@ -71,6 +71,10 @@ class AuthorizedFinancialReviewAdapter:
         self._check("view_evidence")
         return self._ledger.evidence(item_id)
 
+    def authorize_pdf(self, item_id: int) -> dict[str, object]:
+        self._check("view_pdf")
+        return self._ledger.evidence(item_id)
+
     def status(self) -> dict[str, object]:
         self._check("status")
         return self._ledger.status()
