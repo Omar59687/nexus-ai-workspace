@@ -98,6 +98,25 @@ class PositionedTableTests(unittest.TestCase):
         self.assertEqual(result["lexical_diagnostics"]["positioned_fragment_lexical_hints"]["thousand_word"], 1)
         self.assertEqual(result["automatically_verified_financial_facts"], 0)
 
+    def test_normalized_full_saudi_riyals_phrase_is_review_only(self):
+        text = "بالآلاف من الريالات السعودية\\n٢٠٢٤\\n٢٠٢٥\\nإِجمالي الإِيرادات\\n١٨٬٢٠٦٬٤٤٧\\n١٩٬٦٤١٬٧٠٥"
+        self.repo.indexed = source(text)
+        boxes = (
+            PositionedText(140, 25, 5, "بالآلاف من الريالات السعودية"),
+            PositionedText(140, 200, 30, "٢٠٢٤"),
+            PositionedText(140, 320, 30, "٢٠٢٥"),
+            PositionedText(140, 25, 90, "إِجمالي الإِيرادات"),
+            PositionedText(140, 200, 90, "١٨٬٢٠٦٬٤٤٧"),
+            PositionedText(140, 320, 90, "١٩٬٦٤١٬٧٠٥"),
+        )
+        result = self.extract(boxes)
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["evidence_signals"]["anchored_unit_labels"], 1)
+        self.assertEqual(result["evidence_signals"]["anchored_metric_labels"], 1)
+        self.assertTrue(all(item["status"] == "HUMAN_ROW_REVIEW_REQUIRED"
+                            for item in result["candidates"]))
+        self.assertEqual(result["automatically_verified_financial_facts"], 0)
+
     def test_missing_unit_or_unaligned_year_abstains(self):
         for boxes in (
             tuple(x for x in self.boxes if x.text != "SAR thousands"),
