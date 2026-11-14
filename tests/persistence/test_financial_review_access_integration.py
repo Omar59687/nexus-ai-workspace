@@ -120,6 +120,14 @@ class FinancialAccessPostgresTests(unittest.TestCase):
         self.assertTrue(self.client.get("/financial-reviews/status",
                                         headers=self.headers()).status_code == 200)
 
+    def test_indexed_evidence_has_separate_document_view_permission(self):
+        self.provision()
+        self.sql("""INSERT INTO nexus_financial_permissions
+                    (subject, workspace_id, action)
+                    VALUES ('reviewer', 'tenant', 'list')""")
+        assert self.client.get("/financial-reviews/selections/1/evidence",
+                               headers=self.headers()).status_code == 403
+
     def test_expiration_and_revocation_fail_closed(self):
         self.provision(expired=True)
         assert self.client.get("/financial-reviews/status",
