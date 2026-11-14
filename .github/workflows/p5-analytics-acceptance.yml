@@ -68,7 +68,7 @@ jobs:
             exit 1
           fi
           python -m pytest -q tests/persistence/test_postgres_repository.py
-          python -m pytest -q -rs tests/persistence/test_financial_review_ledger_integration.py | tee /tmp/p5-review-ledger-live.log
+          python -m pytest -q -rs tests/persistence/test_financial_review_ledger_integration.py tests/persistence/test_financial_review_access_integration.py | tee /tmp/p5-review-ledger-live.log
           if grep -Eq '([1-9][0-9]*) skipped' /tmp/p5-review-ledger-live.log; then
             echo "P5 review ledger live tests skipped; phase regression denied"
             exit 1
