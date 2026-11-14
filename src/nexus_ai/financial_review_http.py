@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 
 from nexus_ai.data_analytics import AnalyticsInputError
@@ -112,7 +112,7 @@ def create_financial_review_router(
             raise HTTPException(status_code=422, detail="Invalid financial review input or source") from exc
 
     @router.get("/selections")
-    def list_pending(limit: int = 50, adapter=Depends(get_adapter)):
+    def list_pending(limit: int = Query(default=50, ge=1, le=100), adapter=Depends(get_adapter)):
         return {"items": protected(adapter, lambda: adapter.pending(limit=limit))}
 
     @router.post("/selections", status_code=201)
