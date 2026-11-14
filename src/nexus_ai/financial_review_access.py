@@ -17,7 +17,7 @@ from nexus_ai.financial_review_adapter import ReviewPrincipal
 # A caller must securely generate an unpredictable 32-byte token and encode
 # it as 64 lowercase hexadecimal characters; never derive it from a password.
 _TOKEN_PATTERN = re.compile(r"\A[a-f0-9]{64}\Z")
-_ACTIONS = frozenset({"submit", "approve", "reject", "status", "analyze", "list"})
+_ACTIONS = frozenset({"submit", "approve", "reject", "status", "analyze", "list", "view_evidence"})
 
 FINANCIAL_AUTH_SCHEMA_DDL = (
     """CREATE TABLE nexus_financial_sessions (
@@ -32,7 +32,7 @@ FINANCIAL_AUTH_SCHEMA_DDL = (
         subject text NOT NULL CHECK (length(subject) BETWEEN 1 AND 128),
         workspace_id text NOT NULL CHECK (length(workspace_id) BETWEEN 1 AND 128),
         action text NOT NULL CHECK (action IN (
-            'submit', 'approve', 'reject', 'status', 'analyze', 'list'
+            'submit', 'approve', 'reject', 'status', 'analyze', 'list', 'view_evidence'
         )),
         PRIMARY KEY (subject, workspace_id, action)
     )""",
