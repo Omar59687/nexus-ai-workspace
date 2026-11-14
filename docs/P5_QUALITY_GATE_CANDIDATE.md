@@ -92,3 +92,27 @@ database migration, PR or merge is authorized.**
   run repeated measurements and document observed values and margins.
 
 **This addendum does not change the OPEN gate status or imply owner approval.**
+
+## Measured synthetic Linux baseline (not Windows acceptance)
+
+GitHub Actions run [43646633252](https://github.com/Omar59687/nexus-ai-workspace/actions/runs/43646633252),
+engineering commit `078b8b0c45d567f184746e68e68db91ac2c89980`,
+executed the report-only harness successfully on Python 3.12.16,
+Ubuntu hosted Linux, at 5,000 rows / 20 groups:
+
+| Source | Input bytes | Elapsed time | Traced Python peak bytes | Exact total |
+| --- | ---: | ---: | ---: | ---: |
+| CSV | 57,365 | 465.40 ms | 25,534,624 | 44,985 |
+| XLSX | 54,191 | 355.84 ms | 2,337,895 | 44,985 |
+
+These are **single-run, synthetic Linux measurements** taken with
+`tracemalloc` active (and therefore not a latency benchmark without
+instrumentation). The peak excludes native memory and does not describe
+RSS. The CSV peak may include one-time Pandas import allocations, while
+XLSX runs second after those imports. Do not compare the two numbers as
+an intrinsic format memory ranking. The harness verifies exact aggregate
+totals but does not establish a Windows acceptance threshold.
+
+The functional test and disposable PostgreSQL stages passed in the same
+run; human Windows benchmarks, security review and owner gate approval
+remain OPEN.
