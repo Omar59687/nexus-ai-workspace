@@ -67,7 +67,7 @@ def create_financial_review_router(
     ledger_factory: Callable[[], object],
     authenticate_request: Callable[[Request], ReviewPrincipal],
     authorize: Callable[[ReviewPrincipal, str, str], bool],
-    pdf_bytes_provider: Callable[[str, str], bytes] | None = None,
+    pdf_bytes_provider: Callable[[ReviewPrincipal, str, str, str], bytes] | None = None,
     enable_review_page: bool = False,
 ) -> APIRouter:
     """Construct routes only after a trusted host explicitly configures them.
@@ -137,9 +137,11 @@ def create_financial_review_router(
             # This permission is independent from queue and indexed-text
             # access. A trusted provider must enforce document-level grants.
             source = protected(adapter, lambda: adapter.authorize_pdf(item_id))
+            principal = protected(adapter, lambda: adapter._check("view_pdf"))
             try:
                 contents = pdf_bytes_provider(
-                    source["document_id"], source["version_id"],
+                    principal, workspace_id, source["document_id"],
+                    source["version_id"],
                 )
                 # Revalidate active source after accessing original bytes.
                 current = protected(adapter, lambda: adapter.authorize_pdf(item_id))
