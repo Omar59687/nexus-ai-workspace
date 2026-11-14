@@ -3,7 +3,7 @@ import hashlib
 import os
 import unittest
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from nexus_ai.financial_review_access import (
@@ -127,6 +127,41 @@ class FinancialAccessPostgresTests(unittest.TestCase):
                     VALUES ('reviewer', 'tenant', 'list')""")
         assert self.client.get("/financial-reviews/selections/1/evidence",
                                headers=self.headers()).status_code == 403
+
+    def test_revoking_session_during_request_denies_next_action(self):
+        self.provision()
+        self.sql("""INSERT INTO nexus_financial_permissions
+                    (subject, workspace_id, action)
+                    VALUES ('reviewer', 'tenant', 'status')""")
+        access = PostgresFinancialAccess(
+            lambda: self._psycopg.connect(**self._params))
+        request = Request({
+            "type": "http",
+            "headers": [(b"authorization",
+                         ("Bearer " + self.token).encode("ascii"))],
+        })
+        principal = access.authenticate_request(request)
+        assert access.authorize(principal, "tenant", "status") is True
+        self.sql("""UPDATE nexus_financial_sessions
+                    SET revoked_at = now()""")
+        assert access.authorize(principal, "tenant", "status") is False
+
+    def test_expired_session_during_request_denies_next_action(self):
+        self.provision()
+        self.sql("""INSERT INTO nexus_financial_permissions
+                    (subject, workspace_id, action)
+                    VALUES ('reviewer', 'tenant', 'status')""")
+        access = PostgresFinancialAccess(
+            lambda: self._psycopg.connect(**self._params))
+        request = Request({
+            "type": "http",
+            "headers": [(b"authorization",
+                         ("Bearer " + self.token).encode("ascii"))],
+        })
+        principal = access.authenticate_request(request)
+        self.sql("""UPDATE nexus_financial_sessions
+                    SET expires_at = now() - interval '1 second'""")
+        assert access.authorize(principal, "tenant", "status") is False
 
     def test_expiration_and_revocation_fail_closed(self):
         self.provision(expired=True)
