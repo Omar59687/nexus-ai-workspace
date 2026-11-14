@@ -98,13 +98,11 @@ class FinancialReviewLedgerLiveTests(unittest.TestCase):
             self.ledger().evidence(item)
 
     def test_indexed_evidence_rejects_resolved_and_oversized_chunks(self):
-        item = self.store.submit(selection(self.collection.documents["annual25"]))
         self.collection.documents["annual25"] = indexed(
             "FY2025 19,641,705" + "a" * 8192, doc_id="annual25", version="v1")
+        item = self.store.submit(selection(self.collection.documents["annual25"]))
         with self.assertRaisesRegex(AnalyticsInputError, "bounded limit"):
             self.store.evidence(item)
-        self.collection.documents["annual25"] = indexed(
-            "FY2025 19,641,705", doc_id="annual25", version="v1")
         self.store.reject(item, reviewer_id="reviewer")
         with self.assertRaises(AnalyticsInputError):
             self.store.evidence(item)
