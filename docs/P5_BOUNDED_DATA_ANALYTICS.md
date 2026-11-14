@@ -105,6 +105,52 @@ Automated table-row extraction from PDF remains a different acceptance
 requirement. No output is evidence of a source document unless the
 caller supplies trusted source data and validates its provenance.
 
+## Slice C — Source-backed reviewed financial observations
+
+`src/nexus_ai/financial_evidence_analytics.py` now provides an explicit
+bridge from a live, active Phase 4 document index to the Phase 5 annual
+financial-series engine. This bridge **does not automatically interpret PDF
+financial tables**.
+
+Each `ReviewedFinancialObservation` is supplied by a trusted caller with
+an explicitly asserted company, metric, year, amount, currency and unit,
+plus `reviewer_asserted_row=True`, and a complete citation:
+workspace/document/version, source path/hash, page number, chunk identifier,
+and exact character offsets.
+
+The service checks the active repository generation and source identity,
+the cited chunk's page/offset/text integrity, and presence of the **exact
+numeric value** inside the cited text (including English/Arabic thousand
+separators and Arabic-Indic digits). It rechecks source versions after
+processing the batch to reject replaced documents. It never infers a unit,
+year or row label from the appearance of a number alone.
+
+For single-total financial metrics, repeated citations (e.g. an annual
+consolidated statement and an operating segment note repeating total
+revenue) are **deduplicated**. Conflicting values for the same
+company/year/metric/unit/currency are rejected, not summed or silently
+selected. The output includes citation-level provenance by year while
+delegating the mathematical series/Y-o-Y computation to
+`analyze_financial_series`.
+
+This is a **reviewed-input contract**, not cryptographic proof of a review
+or a replacement for authentication. The caller must trust/authorize the
+workspace scope and the human review assertion; untrusted user payloads
+must not be exposed as automatically verified financial facts. Source
+documents are read through the supplied repository, not from caller-provided
+filesystem paths, and no database writes, model calls, or hosted requests
+are made.
+
+Additional tests cover Arabic numeric punctuation, stale versions,
+cross-workspace identity, wrong offsets, exact-number mismatches, duplicate
+citations, year-total conflicts, mixed units/currencies, and a source
+generation being replaced mid-analysis.
+
+**Not included yet:** automatic metric/table-row extraction, signed review
+approvals, a durable reviewed-facts store, authenticated HTTP integration, or
+an end-to-end 150-PDF financial benchmark. Do not treat this as completed
+financial statement parsing or finished Phase 5.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
@@ -114,7 +160,7 @@ caller supplies trusted source data and validates its provenance.
   regression in `.github/workflows/p5-analytics-acceptance.yml`.
 - No model calls, hosted writes, PRs or merge to `main`.
 
-**Remaining Phase 5 work:** richer financial derivations and source-linked
-provenance, authorization/API integration, real workload performance and
-formal full-repository quality gate. Slice A/B tests alone do not make Phase 5
+**Remaining Phase 5 work:** automatic table-row parsing, durable reviewed
+observation lifecycle, authorization/API integration, real workload
+performance and formal full-repository quality gate. Slice A/B tests alone do not make Phase 5
 production-complete.
