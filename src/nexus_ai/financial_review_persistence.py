@@ -243,6 +243,58 @@ class PostgresFinancialReviewLedger:
             })
         return output
 
+    def evidence(self, item_id: int) -> dict[str, object]:
+        """Bounded exact-index-text preview; NOT an original PDF page rendering.
+
+        Only pending records are eligible. No local path is opened and no
+        automatic table row, year or unit relationship is inferred.
+        """
+        if type(item_id) is not int or item_id <= 0:
+            raise AnalyticsInputError("invalid review id")
+        with self._transaction() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT id, workspace_id, document_id, version_id,
+                              source_sha256, source_path, page_number,
+                              chunk_id, start_char, end_char, amount
+                       FROM nexus_financial_reviews
+                       WHERE workspace_id = %s AND id = %s
+                         AND state = 'PENDING'""",
+                    (self.workspace_id, item_id),
+                )
+                row = cursor.fetchone()
+        if row is None:
+            raise AnalyticsInputError("pending review not found")
+        selection = _selection_from_row(row)
+        _verify_source(selection, repository=self._collection,
+                       workspace_id=self.workspace_id)
+        indexed = self._collection.get_active(self.workspace_id, row[2])
+        if indexed is None:
+            raise AnalyticsInputError("source no longer indexed")
+        chunks = [chunk for chunk in indexed.chunks if chunk.chunk_id == row[7]]
+        if len(chunks) != 1:
+            raise AnalyticsInputError("citation source text mismatch")
+        chunk = chunks[0]
+        if len(chunk.text) > 8192:
+            raise AnalyticsInputError("source preview exceeds bounded limit")
+        # Verify again after retrieving text: reject a concurrent replacement
+        # detected during source preview preparation.
+        _verify_source(selection, repository=self._collection,
+                       workspace_id=self.workspace_id)
+        return {
+            "id": row[0],
+            "document_id": row[2],
+            "version_id": row[3],
+            "page_number": row[6],
+            "amount": row[10],
+            "indexed_excerpt": chunk.text,
+            "citation": dict(selection.citation),
+            "evidence_kind": "INDEXED_TEXT_ONLY",
+            "original_pdf_visually_checked": False,
+            "accounting_row_verified": False,
+            "requires_original_document_review": True,
+        }
+
     def status(self) -> dict[str, object]:
         with self._transaction() as conn:
             with conn.cursor() as cursor:
