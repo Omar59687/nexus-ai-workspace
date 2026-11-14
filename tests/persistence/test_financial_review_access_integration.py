@@ -105,6 +105,21 @@ class FinancialAccessPostgresTests(unittest.TestCase):
         assert self.client.get("/financial-reviews/status",
                                headers=self.headers()).status_code == 403
 
+    def test_listing_requires_independent_list_grant(self):
+        self.provision()
+        self.sql("""INSERT INTO nexus_financial_permissions
+                    (subject, workspace_id, action)
+                    VALUES ('reviewer', 'tenant', 'status')""")
+        assert self.client.get("/financial-reviews/selections",
+                               headers=self.headers()).status_code == 403
+        self.sql("""INSERT INTO nexus_financial_permissions
+                    (subject, workspace_id, action)
+                    VALUES ('reviewer', 'tenant', 'list')""")
+        # Test ledger intentionally lacks pending(); a granted read reaches
+        # the ledger and must not be mistaken for an authorization failure.
+        self.assertTrue(self.client.get("/financial-reviews/status",
+                                        headers=self.headers()).status_code == 200)
+
     def test_expiration_and_revocation_fail_closed(self):
         self.provision(expired=True)
         assert self.client.get("/financial-reviews/status",
