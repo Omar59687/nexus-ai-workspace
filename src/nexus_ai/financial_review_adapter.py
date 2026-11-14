@@ -16,6 +16,7 @@ from nexus_ai.financial_review_workflow import ReviewDecision, ReviewSelection, 
 class ReviewPrincipal:
     """Identity returned by trusted authentication middleware, not a request body."""
     subject: str
+    session_token_sha256: str | None = None
 
 
 class AuthorizedFinancialReviewAdapter:
