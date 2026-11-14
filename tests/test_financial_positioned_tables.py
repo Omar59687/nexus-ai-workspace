@@ -85,6 +85,19 @@ class PositionedTableTests(unittest.TestCase):
         self.assertEqual(result["candidate_count"], 2)
         self.assertEqual({c["metric"] for c in result["candidates"]}, {"revenue"})
 
+    def test_page_level_arabic_words_cannot_be_promoted_to_geometry_candidates(self):
+        # Financial labels exist in the source page but are not independently
+        # represented in the trusted coordinate boxes. No auto-attribution.
+        old = self.repo.indexed
+        text = old.document.pages[0].text + "إجمالي الإيرادات (ألف ريال سعودي)\\n"
+        self.repo.indexed = source(text)
+        result = self.extract(self.boxes)
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertGreater(result["lexical_diagnostics"]["page_text_lexical_hints"]["revenue_word"], 0)
+        self.assertGreater(result["lexical_diagnostics"]["page_text_lexical_hints"]["thousand_word"], 0)
+        self.assertEqual(result["lexical_diagnostics"]["positioned_fragment_lexical_hints"]["thousand_word"], 1)
+        self.assertEqual(result["automatically_verified_financial_facts"], 0)
+
     def test_missing_unit_or_unaligned_year_abstains(self):
         for boxes in (
             tuple(x for x in self.boxes if x.text != "SAR thousands"),
