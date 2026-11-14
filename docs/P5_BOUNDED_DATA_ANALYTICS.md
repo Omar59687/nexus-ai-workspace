@@ -184,6 +184,56 @@ automatic extraction for complex real annual-report tables. Extending it
 requires positional table reconstruction, independent real-document
 annotations, and negative controls for year/currency/metric ambiguity.
 
+## Slice E — Position-aware financial PDF diagnostic (experimental)
+
+This branch now contains `financial_positioned_tables.py` and
+`financial_pdf_geometry.py`. The former analyzes text fragments with
+page/X/Y coordinates; the latter retrieves those fragments using a
+bounded child process under the same POSIX resource limits or Windows
+Job Object framework as the existing Phase 4 PDF extractor.
+
+The geometry worker is **not** a new PDF security sandbox. It has CPU,
+memory, wall-time, byte, output and per-page fragment budgets, but does
+not prohibit file/network access by a potentially hostile parser. The
+owner should use it only on a trusted local PDF until stronger
+filesystem/network isolation is implemented.
+
+The positional parser accepts multi-year columns only when each amount
+aligns with exactly one year header, a recognized metric row label, and
+a single explicit unit/currency heading. Every detected number must
+also occur in an unchanged, source-checked document chunk. Collisions,
+overlapping values, unreliable offsets and unanchored geometry abstain.
+Returned candidates have `HUMAN_ROW_REVIEW_REQUIRED`, never automatic
+row-verified status. In particular, geometry fragments returned by
+pypdf may be inaccurate for Arabic RTL layouts; only a real-document
+diagnostic can establish usefulness for the Mobily report.
+
+**Owner-only diagnostic (optional, no paid model or hosted database):**
+
+```powershell
+Set-Location "C:\AI Projects\Nexus AI P4 Forensics"
+git fetch origin feature/p5-bounded-data-analytics
+# Switch only if the worktree is clean and you are intentionally testing P5.
+git switch --detach origin/feature/p5-bounded-data-analytics
+$env:PYTHONPATH = "$PWD;$PWD\src"
+& "C:\AI Projects\Nexus AI\.venv\Scripts\python.exe" `
+  scripts/diagnose_pdf_financial_geometry.py `
+  --pdf "C:\Users\HP PAVILION\Downloads\Mobily Annual Report 2025 - Arabic.pdf" `
+  --pages 140 142 `
+  --report "$env:LOCALAPPDATA\NexusAI\reports\p5-mobily-geometry.json"
+```
+
+The report contains **only diagnostics and candidate counts**, not
+financial values or page text. A passing program exit status means
+diagnostic execution succeeded, not that table interpretation passed.
+A failed or empty report is evidence of remaining geometry/reading-order
+gaps, not justification to guess revenue rows.
+
+The code does **not** inject reviewed facts into analytics. An
+authorized human must still confirm a candidate's row/year/metric/unit
+and invoke the separately validated `ReviewedFinancialObservation`
+interface. Real-PDF geometry acceptance is pending owner-side testing.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
