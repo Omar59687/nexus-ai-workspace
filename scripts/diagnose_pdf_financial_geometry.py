@@ -18,6 +18,7 @@ from nexus_ai.documents.collection_preflight import _manifest_entries
 from nexus_ai.documents.collection_types import CollectionIndexLimits
 from nexus_ai.financial_pdf_geometry import extract_pdf_positions
 from nexus_ai.financial_pdf_layout_diagnostics import inspect_pdf_layout_signals
+from nexus_ai.financial_geometry_review import build_financial_review_inventory
 from nexus_ai.financial_positioned_tables import reconstruct_financial_rows
 from nexus_ai.retrieval.collection_repository import InMemoryCollectionIndexRepository
 
@@ -54,6 +55,10 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
     reports = []
     for page in pages:
         layout_signals = inspect_pdf_layout_signals(positioned[page], page_number=page)
+        review = build_financial_review_inventory(
+            positioned[page], repository=repository, workspace_id=workspace,
+            document_id=doc_id, page_number=page,
+        )
         try:
             record = reconstruct_financial_rows(
                 positioned[page], repository=repository, workspace_id=workspace,
@@ -91,6 +96,14 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
             "pdf_page_number": page,
             "positioned_fragments": len(positioned[page]),
             "digest_bound_layout_signals": layout_signals,
+            "review_inventory": {
+                "status": review["status"],
+                "source_cited_numeric_positions": review["numeric_citation_count"],
+                "digest_bound_label_bands": review["geometry_label_band_count"],
+                "uncited_numeric_skipped": review["uncited_numeric_fragments_skipped"],
+                "cross_evidence_associations": review["cross_evidence_associations"],
+                "automatically_verified_financial_facts": 0,
+            },
             "status": status,
             "review_only_candidate_count": count,
             "abstentions": abstentions,
