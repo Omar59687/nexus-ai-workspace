@@ -66,6 +66,12 @@ def test_formula_cells_are_escaped_and_linebreaks_denied():
     lambda d: d["annual"][0].update(year=True),
     lambda d: d["annual"][0].update(amount="1e7"),
     lambda d: d["annual"][0].update(amount="=1+2"),
+    lambda d: d["annual"][0].update(amount="--1"),
+    lambda d: d["annual"][0].update(amount="1..2"),
+    lambda d: d["annual"][0].update(amount="00"),
+    lambda d: d["annual"][0].update(amount="99999999999999999999999999999"),
+    lambda d: d["annual"][1].update(yoy_percent="--7"),
+    lambda d: d["annual"][1].update(yoy_percent="1..2"),
     lambda d: d["provenance"][0]["citations"][0].update(page_number=0),
     lambda d: d["provenance"][0]["citations"][0].update(document_id="bad\r\nformula"),
 ])
