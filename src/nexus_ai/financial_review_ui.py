@@ -204,7 +204,15 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
   el("connect").addEventListener("click", async () => {
     token = el("token").value.trim();
     el("token").value = "";
-    try { await refresh(); } catch (e) { message(e.message); }
+    el("queue").replaceChildren();
+    el("analysisResults").replaceChildren();
+    clearSelection();
+    try { await refresh(); } catch (e) {
+      token = "";
+      el("queue").replaceChildren();
+      clearSelection();
+      message(e.message);
+    }
   });
   el("disconnect").addEventListener("click", () => {
     token = "";
