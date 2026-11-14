@@ -85,10 +85,11 @@ def reconstruct_financial_rows(
         if matches:
             units.append((y, *matches[0]))
         years = _YEAR.findall(_latin_digits(value))
-        if len(years) == 1 and (value.strip() == years[0] or
+        if len(years) == 1 and (_latin_digits(value.strip()) == years[0] or
                                 value.casefold().strip() == ("year: " + years[0])):
             headers.append((x, y, int(years[0])))
     candidates = []
+    ambiguous_row_detected = False
     abstentions = {"no_unambiguous_header": 0, "no_unambiguous_row": 0,
                    "missing_exact_source_chunk": 0}
     all_chunks = [c for c in indexed.chunks if c.page_number == page_number]
@@ -121,6 +122,7 @@ def reconstruct_financial_rows(
                          if abs(x - nx) <= 12]
             if len(competing) != 1:
                 abstentions["no_unambiguous_row"] += 1
+                ambiguous_row_detected = True
                 continue
             evidence = [
                 c for c in all_chunks
@@ -148,6 +150,10 @@ def reconstruct_financial_rows(
                 "position": {"amount_x": nx, "row_y": ny},
                 "status": "HUMAN_ROW_REVIEW_REQUIRED",
             })
+    # Any competing same-column values on a financial row make the page
+    # unsafe for automatic positional attribution; withhold partial rows.
+    if ambiguous_row_detected:
+        candidates = []
     # A repeated same-year/metric candidate with divergent amount means
     # table geometry is not reliable. Do not silently pick one.
     fact_keys = {}
