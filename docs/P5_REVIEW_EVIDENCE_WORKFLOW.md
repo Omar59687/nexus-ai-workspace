@@ -123,3 +123,29 @@ requires the owner's Windows environment and original PDF collection:
 For quick module-level CI, no real PDF files, local Windows environment, or
 human credentials are necessary; the isolated GitHub Actions workflow covers
 fake and disposable-database tests.
+
+
+## Trusted operator provisioning (inert library)
+
+\`FinancialReviewProvisioner\` enables a restricted operator process to
+create a 32-byte random opaque bearer token (returned once to the trusted
+caller), store only its SHA-256 digest in PostgreSQL, grant/revoke
+subject/workspace/action permission rows, and revoke sessions by digest.
+A new session has **zero grants**. Its requested lifetime is bounded to
+60–86400 seconds (24 hours maximum).
+
+It is neither a public API nor a CLI that prints credentials. Importing
+it performs no database writes. The caller must authenticate the operator,
+configure a separate least-privilege writer DB role, protect the raw
+token through a private out-of-band channel, and log administrative actions
+**without logging token values**. Existing \`PostgresFinancialAccess\`
+continues to be used for request authentication and grant checks.
+
+The permission checks now join current unexpired, unrevoked session rows
+by the exact digest on **every action**, rather than only at initial
+authentication. Revocation or expiry between a request's authentication
+step and action authorization therefore fails closed.
+
+Operator provisioning tests only write to the disposable, loopback-only
+database used by CI. No real session was issued, no hosted auth DB was
+modified, and no management interface was exposed.
