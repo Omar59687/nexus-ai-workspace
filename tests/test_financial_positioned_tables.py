@@ -67,6 +67,9 @@ class PositionedTableTests(unittest.TestCase):
         self.assertTrue(all(x["status"] == "HUMAN_ROW_REVIEW_REQUIRED"
                             and x["chunk_id"] == "c" for x in result["candidates"]))
         self.assertEqual(result["automatically_verified_financial_facts"], 0)
+        self.assertEqual(result["evidence_signals"]["anchored_year_headers"], 2)
+        self.assertEqual(result["evidence_signals"]["anchored_metric_labels"], 1)
+        self.assertEqual(result["evidence_signals"]["anchored_numeric_fragments"], 4)
 
     def test_arabic_metric_and_arabic_digit_geometry(self):
         text = "ألف ريال سعودي\n٢٠٢٤\n٢٠٢٥\nإجمالي الإيرادات\n١٨٬٢٠٦٬٤٤٧\n١٩٬٦٤١٬٧٠٥"
