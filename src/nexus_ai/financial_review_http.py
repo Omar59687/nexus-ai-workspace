@@ -150,6 +150,10 @@ def create_financial_review_router(
                 return make_review_pdf_attachment(
                     indexed_evidence=current, pdf_bytes=contents,
                 )
+            except PermissionError as exc:
+                raise HTTPException(
+                    status_code=403, detail="Original PDF access denied",
+                ) from exc
             except AnalyticsInputError as exc:
                 raise HTTPException(
                     status_code=422, detail="Original PDF evidence unavailable",
