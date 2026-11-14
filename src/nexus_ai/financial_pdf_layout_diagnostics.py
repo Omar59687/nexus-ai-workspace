@@ -101,7 +101,16 @@ def inspect_pdf_layout_signals(
         right_flags = _match_layout_phrase(normalize_arabic(" ".join(x.text for x in desc)))
         joined_revenue += int(left_flags[0] or right_flags[0])
         joined_unit += int(left_flags[1] or right_flags[1])
-        ambiguous_orders += int(left_flags != right_flags)
+        # Flag different text orders even if both happen to contain a
+        # diagnostic keyword; this prevents overstating RTL certainty.
+        ambiguous_orders += int(
+            left_flags != right_flags or (
+                len(fragment_line) > 1
+                and normalize_arabic(" ".join(x.text for x in asc))
+                    != normalize_arabic(" ".join(x.text for x in desc))
+                and (any(left_flags) or any(right_flags))
+            )
+        )
     return {
         "status": "GEOMETRY_LEXICAL_DIAGNOSTIC_ONLY",
         "page_number": page_number,
