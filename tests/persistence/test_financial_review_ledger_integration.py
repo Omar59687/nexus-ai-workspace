@@ -65,6 +65,23 @@ class FinancialReviewLedgerLiveTests(unittest.TestCase):
         self.assertEqual(out["unique_financial_facts"], 2)
         self.assertEqual(out["review_workflow"], "DURABLE_EXPLICIT_HUMAN_APPROVAL")
 
+    def test_pending_queue_stays_bounded_and_source_version_safe(self):
+        item = self.store.submit(selection(self.collection.documents["annual25"]))
+        rows = self.ledger().pending(limit=1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], item)
+        self.assertTrue(rows[0]["requires_visual_review"])
+        self.assertFalse(rows[0]["automatically_verified_financial_fact"])
+        self.assertEqual(rows[0]["amount"], "19641705")
+        with self.assertRaises(AnalyticsInputError):
+            self.store.pending(limit=0)
+        self.assertEqual(self.ledger(workspace_id="another").pending(), [])
+        self.collection.documents["annual25"] = indexed(
+            "FY2025 19,641,705", doc_id="annual25", version="v2")
+        with self.assertRaises(AnalyticsInputError):
+            self.ledger().pending()
+        self.assertEqual(self.store.status()["pending"], 1)
+
     def test_rejected_and_double_decided_items_not_reused(self):
         item = self.store.submit(selection(self.collection.documents["annual25"]))
         self.store.reject(item, reviewer_id="reviewer")
