@@ -18,6 +18,7 @@ from nexus_ai.financial_review_adapter import (
 )
 from nexus_ai.financial_review_workflow import ReviewDecision, ReviewSelection, _require_text
 from nexus_ai.financial_review_pdf import make_review_pdf_attachment
+from nexus_ai.financial_review_ui import review_page_response
 
 
 class NumericCitationPayload(BaseModel):
@@ -67,6 +68,7 @@ def create_financial_review_router(
     authenticate_request: Callable[[Request], ReviewPrincipal],
     authorize: Callable[[ReviewPrincipal, str, str], bool],
     pdf_bytes_provider: Callable[[str, str], bytes] | None = None,
+    enable_review_page: bool = False,
 ) -> APIRouter:
     """Construct routes only after a trusted host explicitly configures them.
 
@@ -112,6 +114,11 @@ def create_financial_review_router(
         except AnalyticsInputError as exc:
             # Avoid exposing document paths, indexed text, or user input in errors.
             raise HTTPException(status_code=422, detail="Invalid financial review input or source") from exc
+
+    if enable_review_page is True:
+        @router.get("/reviewer", include_in_schema=False)
+        def reviewer_workbench():
+            return review_page_response()
 
     @router.get("/selections")
     def list_pending(limit: int = Query(default=50, ge=1, le=100), adapter=Depends(get_adapter)):
