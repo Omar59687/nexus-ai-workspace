@@ -223,6 +223,17 @@ $env:PYTHONPATH = "$PWD;$PWD\src"
   --report "$env:LOCALAPPDATA\NexusAI\reports\p5-mobily-geometry.json"
 ```
 
+After the first real Mobily run (142 PDF pages, 2,139 chunks), the worker
+successfully emitted 174 positional fragments on PDF page 140 and 263 on
+page 142, but the old strict equality test aborted each entire page at
+`ABSTAIN_SOURCE_GEOMETRY_MISMATCH`. The follow-up implementation
+independently checks each fragment against the existing indexed source,
+**skips** fragments whose text cannot be reconciled, and reports counts
+for source-backed years, metric labels, unit labels, and numbers. It
+does not use skipped fragments to create candidates or change the rule
+that reviewed facts require human confirmation. This follow-up
+still requires a new owner-side real-PDF run to assess usefulness.
+
 The report contains **only diagnostics and candidate counts**, not
 financial values or page text. A passing program exit status means
 diagnostic execution succeeded, not that table interpretation passed.
