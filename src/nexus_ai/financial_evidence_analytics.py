@@ -47,7 +47,7 @@ def _number_pattern(value: str) -> re.Pattern[str]:
     # For source presence, normalized decimal digits (including Arabic-Indic)
     # are compared without grouping separators; no arithmetic inferred.
     digits = re.escape(value)
-    return re.compile(r"(?<![0-9])" + digits + r"(?![0-9])")
+    return re.compile(r"(?<![0-9.\\-])" + digits + r"(?![0-9.])")
 
 
 def _normalized_numerals(value: str) -> str:
