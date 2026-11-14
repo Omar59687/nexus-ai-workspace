@@ -61,6 +61,7 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
             count = record["candidate_count"]
             abstentions = record["abstentions"]
             source_binding = record["source_binding"]
+            evidence_signals = record["evidence_signals"]
             diagnostic_code = None
         except AnalyticsInputError as exc:
             # Fixed enums only. Do not include raw exception text, extracted
@@ -72,6 +73,10 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
                 else "UNSUPPORTED_LAYOUT"
             )
             status, count, abstentions = "ABSTAIN_SOURCE_GEOMETRY_MISMATCH", 0, {}
+            evidence_signals = {"anchored_year_headers": 0,
+                                "anchored_unit_labels": 0,
+                                "anchored_metric_labels": 0,
+                                "anchored_numeric_fragments": 0}
             source_binding = {"positioned_fragments_total": len(positioned[page]),
                               "source_anchored_fragments": 0,
                               "unmatched_fragments_skipped": 0,
@@ -83,6 +88,7 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
             "review_only_candidate_count": count,
             "abstentions": abstentions,
             "source_binding": source_binding,
+            "evidence_signals": evidence_signals,
             "diagnostic_code": diagnostic_code,
         })
     return {
