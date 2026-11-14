@@ -67,6 +67,10 @@ class AuthorizedFinancialReviewAdapter:
         self._check("list")
         return self._ledger.pending(limit=limit)
 
+    def evidence(self, item_id: int) -> dict[str, object]:
+        self._check("view_evidence")
+        return self._ledger.evidence(item_id)
+
     def status(self) -> dict[str, object]:
         self._check("status")
         return self._ledger.status()
