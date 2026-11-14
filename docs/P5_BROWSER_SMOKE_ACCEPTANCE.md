@@ -37,3 +37,27 @@ gate, or an actual human looking at financial rows. Continue to report these
 as independent gates. The standard Phase 5 GitHub Actions workflow already
 tests PostgreSQL against an isolated disposable service. Do not interpret
 the Playwright mock ledger as database persistence verification.
+
+
+## Reviewed analytics and session switching
+
+The reviewer workbench now offers a separate **Reviewed financial analysis**
+form. It submits explicit company, metric, currency, unit and bounded years
+to the existing permission-gated `POST /financial-reviews/analyze` endpoint
+and displays exact Decimal *strings* with year-over-year values and source
+document/page citations. The UI never derives financial labels or recomputes
+totals on the client. An unapproved or ambiguous series must be rejected by
+the server. Source and provenance data are inserted with DOM `textContent`,
+not interpreted as HTML.
+
+Real Chromium coverage checks the resulting amount and provenance after
+a synthetic approval. It also checks switching from a valid session to an
+invalid one clears the previous queue, excerpt and reviewed analysis.
+Asynchronous HTTP responses carry a browser-session generation check so
+a response from a prior token is rejected after disconnect or token switch.
+This does not replace server-side access controls; it prevents stale data
+from being reinserted into an already cleared page.
+
+The reviewed analysis output remains a backend assertion tied to explicit
+human decisions; synthetic UI tests do not establish financial accuracy in
+a real report.
