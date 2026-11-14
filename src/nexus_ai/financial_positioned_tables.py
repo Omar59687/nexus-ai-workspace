@@ -14,6 +14,7 @@ import math
 from dataclasses import dataclass
 
 from nexus_ai.data_analytics import AnalyticsInputError
+from nexus_ai.financial_arabic_signals import financial_signal_diagnostics
 from nexus_ai.financial_evidence_analytics import _evidence_contains_amount
 from nexus_ai.financial_table_candidates import _LABELS, _UNITS, _parse_amount, _latin_digits, _YEAR
 
@@ -104,6 +105,9 @@ def reconstruct_financial_rows(
         if len(years) == 1 and (_latin_digits(value.strip()) == years[0] or
                                 value.casefold().strip() == ("year: " + years[0])):
             headers.append((x, y, int(years[0])))
+    lexical_diagnostics = financial_signal_diagnostics(
+        page.text, tuple(value for _, _, value in canonical)
+    )
     evidence_signals = {
         "anchored_year_headers": len(headers),
         "anchored_unit_labels": len(units),
@@ -202,6 +206,15 @@ def reconstruct_financial_rows(
         "candidate_count": len(candidates), "candidates": candidates,
         "abstentions": abstentions, "automatically_verified_financial_facts": 0,
         "evidence_signals": evidence_signals,
+        "lexical_diagnostics": lexical_diagnostics,
+        "reason": (
+            "NO_SOURCE_ANCHORED_METRIC_LABEL"
+            if evidence_signals["anchored_metric_labels"] == 0 else
+            "NO_SOURCE_ANCHORED_UNIT_LABEL"
+            if evidence_signals["anchored_unit_labels"] == 0 else
+            "NO_UNAMBIGUOUS_SPATIAL_ROW"
+            if not candidates else "REVIEW_REQUIRED"
+        ),
         "source_binding": {"positioned_fragments_total": len(boxes),
                            "source_anchored_fragments": len(canonical),
                            "unmatched_fragments_skipped": unmatched,
