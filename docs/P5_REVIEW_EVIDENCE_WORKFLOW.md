@@ -149,3 +149,65 @@ step and action authorization therefore fails closed.
 Operator provisioning tests only write to the disposable, loopback-only
 database used by CI. No real session was issued, no hosted auth DB was
 modified, and no management interface was exposed.
+
+
+## Pinned local source provider
+
+\`PinnedLocalPdfStore\` in \`financial_review_source_store.py\` is a
+concrete local provider for the optional original-PDF endpoint. It reuses
+\`documents.filesystem.read_approved_file\`, including the existing
+approved-root containment, POSIX no-follow descriptor opens, Windows
+reparse-point checks, bounded reads and identity checks.
+
+An **operator-supplied**, immutable in-memory pin map associates
+\`(workspace_id, document_id, version_id)\` with
+\`(relative_pdf_path, original_file_sha256)\`. The map accepts at most 150
+entries. No path is derived from a user request; no directory traversal
+or scanning occurs. The provider independently authorizes
+\`(authenticated_principal, workspace_id, document_id, "view_pdf")\`
+before opening the corresponding file. It checks the file hash on every
+read; the HTTP PDF attachment layer then independently compares its bytes
+to the active indexed source hash and validates the cited PDF page.
+
+Example **wiring only** (do not execute against production):
+
+\`\`\`python
+from nexus_ai.financial_review_source_store import PinnedLocalPdfStore
+
+store = PinnedLocalPdfStore(
+    approved_root=explicit_owner_selected_reports_folder,
+    pinned={
+        ("workspace-test", "annual-2025", "version-abc"): (
+            "annual-reports/2025.pdf",
+            "64-character-lowercase-sha256-from-trusted-index",
+        )
+    },
+    authorize_document=trusted_document_access_check,
+)
+router = create_financial_review_router(
+    workspace_id="workspace-test",
+    ledger_factory=workspace_scoped_ledger_factory,
+    authenticate_request=access.authenticate_request,
+    authorize=access.authorize,
+    pdf_bytes_provider=store,
+    enable_review_page=True,
+)
+\`\`\`
+
+The example is intentionally inert; the SHA placeholder and application
+dependencies must be replaced with real trusted source identities.
+**Never** pass a client path, URL or arbitrary \`source_path\` directly
+to the file reader. The document ACL must independently deny unrelated
+files even if a person has a broader workspace-wide \`view_pdf\` grant.
+The local Windows reader's same-user concurrent directory-replacement
+limitation still applies; protect the approved folder from untrusted
+writers or use immutable object storage for production.
+
+The provider callback signature is
+\`(principal, workspace_id, document_id, version_id) -> bytes\`.
+Document ACL denials are returned generically as HTTP 403, not a source
+path disclosure. Missing or mutated pinned files fail closed with a
+generic service or evidence error.
+
+This prepares a test-only original-PDF path without requiring the
+second account to reimplement filesystem safety rules.
