@@ -44,3 +44,46 @@ existing regression and guarded disposable-PostgreSQL suites.
 source, then a bounded request adapter with principal resolved by server-side
 middleware; independently review workspace and document access before any
 public exposure.
+
+
+## Opt-in HTTP adapter
+
+`create_financial_review_router` in
+`src/nexus_ai/financial_review_http.py` creates FastAPI endpoints for
+submission, approval, rejection, status and bounded reviewed analytics.
+It is **not imported or mounted in `nexus_ai.main`**. The trusted
+application host must explicitly mount it, supplying all four arguments:
+
+- A server-configured `workspace_id` (not supplied by query/body/path).
+- A `ledger_factory` returning a ledger for exactly that workspace.
+- `authenticate_request(request)` which validates a real session/token and
+  returns a `ReviewPrincipal` created by trusted server code.
+- `authorize(principal, workspace_id, action)` which obtains up-to-date
+  grants from a trusted permission store, and returns literal `True` only
+  for authorized operations.
+
+Routes use `/financial-reviews/selections`,
+`/financial-reviews/selections/{item_id}/approve`,
+`/financial-reviews/selections/{item_id}/reject`,
+`/financial-reviews/status`, and `/financial-reviews/analyze`.
+The approve body cannot contain an identity field: the reviewer's identity
+is taken from the verified server-side principal. Strict schemas reject
+unknown fields and type coercion. The ledger continues to verify active
+document version, exact numeric evidence, and explicit human decisions.
+
+HTTP 401 means authentication failed, 403 means authorization failed, 422
+means invalid input/source evidence, and 503 means ledger wiring failure.
+These responses intentionally avoid leaking document data, paths and tokens.
+Response status and analytics data are returned only after authorization.
+
+This is **still not** a deployed, publicly authenticated API. It does not
+implement a credential verifier, session issuance, CSRF protection, secure
+cookies, per-document authorization, visual inspection UI or migration
+rollout. A host must configure and independently security-test these.
+Do not mount these routes with a hard-coded/mock principal or allow-all
+policy in a real application.
+
+`tests/test_financial_review_http.py` uses a fake ledger to exercise
+request validation, auth rejection, action-specific denial, tenant mismatch,
+reviewer spoofing, and permitted lifecycle calls, without any database or
+network access to an actual service.
