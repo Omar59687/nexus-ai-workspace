@@ -10,6 +10,7 @@ from nexus_ai.financial_review_access import (
     FINANCIAL_AUTH_SCHEMA_DDL, PostgresFinancialAccess,
 )
 from nexus_ai.financial_review_http import create_financial_review_router
+from nexus_ai.financial_review_provisioning import FinancialReviewProvisioner
 from tests.persistence import test_postgres_integration as _guard
 
 
@@ -162,6 +163,49 @@ class FinancialAccessPostgresTests(unittest.TestCase):
         self.sql("""UPDATE nexus_financial_sessions
                     SET expires_at = now() - interval '1 second'""")
         assert access.authorize(principal, "tenant", "status") is False
+
+
+    def test_operator_only_provisioning_requires_separate_explicit_grants(self):
+        provisioner = FinancialReviewProvisioner(
+            lambda: self._psycopg.connect(**self._params))
+        token = provisioner.create_session(subject="reviewer", ttl_seconds=600)
+        assert len(token) == 64
+        assert token != self.token
+        stored_digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+        with self._psycopg.connect(**self._params) as db:
+            with db.cursor() as cur:
+                cur.execute("""SELECT token_sha256 FROM nexus_financial_sessions
+                               WHERE subject = 'reviewer'""")
+                row = cur.fetchone()
+        assert row[0] == stored_digest
+        assert row[0] != token
+        assert self.client.get("/financial-reviews/status",
+                               headers=self.headers(token)).status_code == 403
+        provisioner.grant(subject="reviewer", workspace_id="tenant", action="status")
+        provisioner.grant(subject="reviewer", workspace_id="tenant", action="status")
+        assert self.client.get("/financial-reviews/status",
+                               headers=self.headers(token)).status_code == 200
+        assert provisioner.revoke_grant(
+            subject="reviewer", workspace_id="tenant", action="status") is True
+        assert self.client.get("/financial-reviews/status",
+                               headers=self.headers(token)).status_code == 403
+        provisioner.grant(subject="reviewer", workspace_id="tenant", action="status")
+        assert provisioner.revoke_session(token_sha256=stored_digest) is True
+        assert provisioner.revoke_session(token_sha256=stored_digest) is False
+        assert self.client.get("/financial-reviews/status",
+                               headers=self.headers(token)).status_code == 401
+
+    def test_provisioning_rejects_invalid_lifetimes_and_scopes(self):
+        provisioner = FinancialReviewProvisioner(
+            lambda: self._psycopg.connect(**self._params))
+        for ttl in (0, 59, 86401, True, 1.5):
+            with self.assertRaises(ValueError):
+                provisioner.create_session(subject="reviewer", ttl_seconds=ttl)
+        with self.assertRaises(ValueError):
+            provisioner.grant(subject="reviewer", workspace_id="tenant",
+                              action="administrator")
+        with self.assertRaises(ValueError):
+            provisioner.revoke_session(token_sha256="not-a-digest")
 
     def test_expiration_and_revocation_fail_closed(self):
         self.provision(expired=True)
