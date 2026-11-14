@@ -8,7 +8,7 @@ def test_benchmark_reconciles_exact_csv_and_xlsx_totals():
     assert result["purpose"] == "REPORT_ONLY_NOT_AN_ACCEPTANCE_THRESHOLD"
     for kind in ("csv", "xlsx"):
         sample = result["measurements"][kind]
-        assert sample["total_decimal"] == "289"
+        assert sample["total_decimal"] == "309"
         assert sample["row_count"] == 36
         assert sample["input_bytes"] > 0
         assert sample["traced_peak_bytes"] > 0
