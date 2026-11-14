@@ -236,3 +236,31 @@ def test_real_chromium_cannot_read_queue_without_authentication(running_server):
             assert ledger.decisions == []
         finally:
             browser.close()
+
+def test_switching_to_invalid_token_clears_prior_review_data(running_server):
+    base_url, ledger, _ = running_server
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(base_url + "/financial-reviews/reviewer")
+            page.locator("#token").fill(TEST_TOKEN)
+            page.locator("#connect").click()
+            page.get_by_role("status").get_by_text("Loaded 2 pending items.").wait_for()
+            page.locator("#queue button").first.click()
+            page.get_by_role("status").get_by_text(
+                "Indexed excerpt loaded. Original PDF still requires inspection."
+            ).wait_for()
+            assert "Synthetic FY2025" in page.locator("#excerpt").inner_text()
+
+            page.locator("#token").fill("invalid-token")
+            page.locator("#connect").click()
+            page.get_by_role("status").get_by_text("Request failed (401).").wait_for()
+            assert page.locator("#queue button").count() == 0
+            assert "Synthetic FY2025" not in page.locator("#excerpt").inner_text()
+            assert page.locator("#analysisResults").inner_text() == ""
+            page.locator("#refresh").click()
+            page.get_by_role("status").get_by_text("Enter your reviewer token first.").wait_for()
+            assert ledger.decisions == []
+        finally:
+            browser.close()
