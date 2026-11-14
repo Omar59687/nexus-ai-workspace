@@ -90,13 +90,23 @@ class PositionedTableTests(unittest.TestCase):
             result = self.extract(boxes)
             self.assertLess(result["candidate_count"], 2)
 
-    def test_invented_geometry_text_and_cross_page_rejected(self):
-        for bad in (
-            self.boxes + (PositionedText(140, 10, 30, "999,999,999"),),
-            (PositionedText(141, 20, 90, "Total revenue"),),
-        ):
-            with self.assertRaises(AnalyticsInputError):
-                self.extract(bad)
+    def test_unanchored_geometry_text_skipped_and_cross_page_rejected(self):
+        result = self.extract(self.boxes + (PositionedText(140, 10, 30, "999,999,999"),))
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["source_binding"]["unmatched_numeric_fragments_skipped"], 1)
+        self.assertEqual(result["automatically_verified_financial_facts"], 0)
+        with self.assertRaises(AnalyticsInputError):
+            self.extract((PositionedText(141, 20, 90, "Total revenue"),))
+
+    def test_mismatching_unicode_fragments_are_reported_without_fake_rows(self):
+        boxes = self.boxes + (
+            PositionedText(140, 25, 35, "not in original extraction"),
+            PositionedText(140, 300, 80, "800000000"),
+        )
+        result = self.extract(boxes)
+        self.assertEqual(result["candidate_count"], 2)
+        self.assertEqual(result["source_binding"]["unmatched_fragments_skipped"], 2)
+        self.assertEqual(result["source_binding"]["unmatched_numeric_fragments_skipped"], 1)
 
     def test_stale_version_rejected(self):
         orig = self.repo.indexed
