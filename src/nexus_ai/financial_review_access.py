@@ -87,7 +87,7 @@ class PostgresFinancialAccess:
             raise PermissionError("authentication unavailable") from exc
         if row is None or not isinstance(row[0], str) or not 1 <= len(row[0].strip()) <= 128:
             raise PermissionError("authentication required")
-        return ReviewPrincipal(row[0])
+        return ReviewPrincipal(row[0], session_token_sha256=digest)
 
     def authorize(self, principal: ReviewPrincipal, workspace_id: str,
                   action: str) -> bool:
@@ -96,14 +96,20 @@ class PostgresFinancialAccess:
                 or not 1 <= len(principal.subject.strip()) <= 128
                 or not isinstance(workspace_id, str)
                 or not 1 <= len(workspace_id.strip()) <= 128
-                or action not in _ACTIONS):
+                or action not in _ACTIONS
+                or not isinstance(principal.session_token_sha256, str)
+                or not _TOKEN_PATTERN.fullmatch(principal.session_token_sha256)):
             return False
         try:
             row = self._read_one(
-                """SELECT 1 FROM nexus_financial_permissions
-                   WHERE subject = %s AND workspace_id = %s
-                     AND action = %s""",
-                (principal.subject, workspace_id, action),
+                """SELECT 1 FROM nexus_financial_permissions p
+                   JOIN nexus_financial_sessions s
+                     ON s.subject = p.subject
+                   WHERE p.subject = %s AND p.workspace_id = %s
+                     AND p.action = %s AND s.token_sha256 = %s
+                     AND s.revoked_at IS NULL AND s.expires_at > now()""",
+                (principal.subject, workspace_id, action,
+                 principal.session_token_sha256),
             )
         except Exception:
             return False
