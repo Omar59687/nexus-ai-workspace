@@ -111,6 +111,10 @@ def create_financial_review_router(
             # Avoid exposing document paths, indexed text, or user input in errors.
             raise HTTPException(status_code=422, detail="Invalid financial review input or source") from exc
 
+    @router.get("/selections")
+    def list_pending(limit: int = 50, adapter=Depends(get_adapter)):
+        return {"items": protected(adapter, lambda: adapter.pending(limit=limit))}
+
     @router.post("/selections", status_code=201)
     def submit(payload: ReviewSubmissionPayload, adapter=Depends(get_adapter)):
         citation = payload.citation.model_dump()
