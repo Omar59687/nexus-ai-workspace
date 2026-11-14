@@ -60,14 +60,30 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
             status = record["status"]
             count = record["candidate_count"]
             abstentions = record["abstentions"]
-        except AnalyticsInputError:
+            source_binding = record["source_binding"]
+            diagnostic_code = None
+        except AnalyticsInputError as exc:
+            # Fixed enums only. Do not include raw exception text, extracted
+            # financial content or PDF source paths in diagnostic reports.
+            message = str(exc)
+            diagnostic_code = (
+                "SOURCE_IDENTITY_OR_OFFSETS" if "source" in message or "indexed" in message
+                else "INVALID_GEOMETRY_INVENTORY" if "positioned" in message or "coordinate" in message
+                else "UNSUPPORTED_LAYOUT"
+            )
             status, count, abstentions = "ABSTAIN_SOURCE_GEOMETRY_MISMATCH", 0, {}
+            source_binding = {"positioned_fragments_total": len(positioned[page]),
+                              "source_anchored_fragments": 0,
+                              "unmatched_fragments_skipped": 0,
+                              "unmatched_numeric_fragments_skipped": 0}
         reports.append({
             "pdf_page_number": page,
             "positioned_fragments": len(positioned[page]),
             "status": status,
             "review_only_candidate_count": count,
             "abstentions": abstentions,
+            "source_binding": source_binding,
+            "diagnostic_code": diagnostic_code,
         })
     return {
         "status": "DIAGNOSTIC_ONLY", "pages_processed": len(indexed.document.pages),
