@@ -84,6 +84,22 @@ class BrowserLedger:
         self.decisions.append((item_id, reviewer_id))
         self.state[item_id] = "REJECTED"
 
+    def analyze(self, **kwargs):
+        from nexus_ai.data_analytics import AnalyticsInputError
+        if not any(state == "APPROVED" for state in self.state.values()):
+            raise AnalyticsInputError("no approved facts")
+        return {
+            "company": kwargs["company"], "metric": kwargs["metric"],
+            "currency": kwargs["currency"], "unit": kwargs["unit"],
+            "unique_financial_facts": 1,
+            "annual": [{"year": 2025, "amount": "19641705",
+                        "yoy_percent": None, "yoy_unavailable_reason": None}],
+            "provenance": [{"year": 2025, "amount": "19641705",
+                            "citations": [{"document_id": "sample-2025",
+                                           "page_number": 1}]}],
+            "provenance_policy": "Synthetic evidence, manually attributed.",
+        }
+
 
 @pytest.fixture
 def running_server():
@@ -106,7 +122,7 @@ def running_server():
         authenticate_request=authenticate,
         authorize=lambda principal, workspace, action: (
             principal.subject == "synthetic-reviewer" and workspace == WORKSPACE
-            and action in {"list", "view_evidence", "view_pdf", "approve", "reject"}
+            and action in {"list", "view_evidence", "view_pdf", "approve", "reject", "analyze"}
         ),
         pdf_bytes_provider=lambda principal, workspace, doc_id, version_id: (
             pdf_bytes if principal.subject == "synthetic-reviewer"
@@ -178,6 +194,18 @@ def test_real_chromium_review_workflow(running_server):
             assert ledger.state[7] == "APPROVED"
             assert ledger.decisions[0][1].reviewer_id == "synthetic-reviewer"
 
+            page.locator("#analysisCompany").fill("Example Company")
+            page.locator("#analysisStart").fill("2025")
+            page.locator("#analysisEnd").fill("2025")
+            page.locator("#analysisUnit").select_option("thousands")
+            page.locator("#runAnalysis").click()
+            page.get_by_role("status").get_by_text(
+                "Reviewed financial analysis loaded."
+            ).wait_for()
+            analysis = page.locator("#analysisResults")
+            assert analysis.get_by_text("19641705").count() == 1
+            assert analysis.get_by_text("sample-2025 p.1").count() == 1
+
             page.locator("#queue button").first.click()
             page.get_by_role("status").get_by_text(
                 "Indexed excerpt loaded. Original PDF still requires inspection."
@@ -189,6 +217,7 @@ def test_real_chromium_review_workflow(running_server):
             page.locator("#disconnect").click()
             page.get_by_role("status").get_by_text("Reviewer token cleared.").wait_for()
             assert page.locator("#queue button").count() == 0
+            assert page.locator("#analysisResults").inner_text() == ""
         finally:
             browser.close()
 
