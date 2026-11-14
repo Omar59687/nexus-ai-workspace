@@ -8,12 +8,22 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from fastapi import Response
-from nexus_ai.data_analytics import AnalyticsInputError
+from nexus_ai.data_analytics import AnalyticsInputError, _amount
 
 MAX_EXPORT_ROWS = 201
 MAX_EXPORT_CITATIONS = 500
 MAX_EXPORT_BYTES = 256 * 1024
+_CANONICAL_DECIMAL = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z")
+
+
+def _checked_decimal(value: object, field: str) -> str:
+    if (not isinstance(value, str) or len(value) > 40
+            or _CANONICAL_DECIMAL.fullmatch(value) is None):
+        raise AnalyticsInputError(f"invalid {field}")
+    _amount(value)  # Enforce the existing exact precision/range contract.
+    return value
 
 
 def _safe_text(value: object) -> str:
@@ -51,13 +61,7 @@ def render_reviewed_financial_csv(analysis: dict[str, object]) -> Response:
         amount = row.get("amount")
         if type(year) is not int or not 1900 <= year <= 2100:
             raise AnalyticsInputError("invalid reviewed year")
-        if (not isinstance(amount, str) or not amount
-                or len(amount) > 100
-                or any(ch not in "0123456789.-" for ch in amount)
-                or amount.count(".") > 1
-                or amount.count("-") > 1
-                or ("-" in amount and not amount.startswith("-"))):
-            raise AnalyticsInputError("invalid reviewed amount")
+        amount = _checked_decimal(amount, "reviewed amount")
         matches = [p for p in provenance if isinstance(p, dict)
                    and p.get("year") == year and p.get("amount") == amount]
         if len(matches) != 1:
@@ -80,9 +84,8 @@ def render_reviewed_financial_csv(analysis: dict[str, object]) -> Response:
             pages.append(str(page))
         yoy = row.get("yoy_percent")
         reason = row.get("yoy_unavailable_reason")
-        if yoy is not None and (not isinstance(yoy, str) or len(yoy) > 100
-                                or any(ch not in "0123456789.-" for ch in yoy)):
-            raise AnalyticsInputError("invalid year-over-year result")
+        if yoy is not None:
+            yoy = _checked_decimal(yoy, "year-over-year result")
         writer.writerow([*dimensions, year, amount, yoy or "",
                          _safe_text(reason) if reason is not None else "",
                          "; ".join(docs), "; ".join(pages)])
