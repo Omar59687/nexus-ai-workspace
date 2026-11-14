@@ -147,6 +147,16 @@ class FullFinancialReviewStackTests(unittest.TestCase):
         self.assertEqual(analysis.json()["annual"][0]["amount"], "19641705")
         self.assertEqual(analysis.json()["review_workflow"],
                          "DURABLE_EXPLICIT_HUMAN_APPROVAL")
+        exported = self.client.post(
+            "/financial-reviews/analyze/export.csv", headers=self.auth,
+            json={
+                "company": "Mobily", "metric": "revenue",
+                "currency": "SAR", "unit": "thousands",
+                "start_year": 2025, "end_year": 2025,
+            })
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertIn("19641705", exported.content.decode("utf-8-sig"))
+        self.assertIn("annual25", exported.content.decode("utf-8-sig"))
 
         self.operator.revoke_session(
             token_sha256=sha256(self.token.encode("ascii")).hexdigest())
