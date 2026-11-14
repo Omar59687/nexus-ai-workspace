@@ -19,6 +19,7 @@ from nexus_ai.financial_review_adapter import (
 from nexus_ai.financial_review_workflow import ReviewDecision, ReviewSelection, _require_text
 from nexus_ai.financial_review_pdf import make_review_pdf_attachment
 from nexus_ai.financial_review_ui import review_page_response
+from nexus_ai.financial_review_export import render_reviewed_financial_csv
 
 
 class NumericCitationPayload(BaseModel):
@@ -197,5 +198,12 @@ def create_financial_review_router(
     @router.post("/analyze")
     def analyze(payload: FinancialAnalysisPayload, adapter=Depends(get_adapter)):
         return protected(adapter, lambda: adapter.analyze(**payload.model_dump()))
+
+    @router.post("/analyze/export.csv")
+    def export_reviewed_csv(payload: FinancialAnalysisPayload, adapter=Depends(get_adapter)):
+        # The same per-request 'analyze' permission and current-source check
+        # apply; no separate untrusted dataset is accepted for export.
+        result = protected(adapter, lambda: adapter.analyze(**payload.model_dump()))
+        return protected(adapter, lambda: render_reviewed_financial_csv(result))
 
     return router
