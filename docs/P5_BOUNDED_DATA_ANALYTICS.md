@@ -261,6 +261,32 @@ authorized human must still confirm a candidate's row/year/metric/unit
 and invoke the separately validated `ReviewedFinancialObservation`
 interface. Real-PDF geometry acceptance is pending owner-side testing.
 
+## Slice F — Real Mobily Arabic font/layout root-cause diagnostics
+
+The owner-run real PDF geometry report (14 November 2026) confirmed
+ordinary index extraction does not contain normalized revenue words or
+currency/unit phrases on pages 140/142. In contrast, **unanchored**
+visitor-text fragments contain 11/16 revenue-word matches, 9/9 total
+matches, 1/2 thousand hints, and 1/1 SAR/riyal hints. The two pages
+have 62 and 89 source-anchored fragments respectively. Therefore it
+is incorrect to treat the missing labels as merely a lexicon problem.
+
+`financial_pdf_layout_diagnostics.py` groups the *digest-verified*
+position fragments by approximate Y coordinate, tests horizontal LTR
+and RTL ordering independently, and reports only aggregate counts of
+fragmented revenue phrases, explicit scale+currency expressions and
+reading-order disagreement. Importantly, these positions are
+`PDF_DIGEST_ONLY_NOT_INDEX_TEXT_CITATION` evidence; they do **not**
+supply source text offsets and cannot be converted into verified
+financial facts. The diagnostic does not output raw source content,
+numeric values, or an automatic year/row association.
+
+This avoids an invalid workaround: silently treating words present
+only in the PDF visitor-text output as though they were also present
+in the indexed plain-text chunks. This milestone maps the missing
+Arabic layout boundary; it does not solve visual-table parsing or
+remove the human review requirement.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
