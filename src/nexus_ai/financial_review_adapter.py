@@ -63,6 +63,10 @@ class AuthorizedFinancialReviewAdapter:
         principal = self._check("reject")
         self._ledger.reject(item_id, reviewer_id=principal.subject)
 
+    def pending(self, *, limit: int = 50) -> list[dict[str, object]]:
+        self._check("list")
+        return self._ledger.pending(limit=limit)
+
     def status(self) -> dict[str, object]:
         self._check("status")
         return self._ledger.status()
