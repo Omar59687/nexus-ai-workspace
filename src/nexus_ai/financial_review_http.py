@@ -125,7 +125,7 @@ def create_financial_review_router(
     def approve(item_id: int, payload: ReviewDecisionPayload,
                 adapter=Depends(get_adapter)):
         # The trusted authenticated subject, never the request body, is reviewer_id.
-        principal = adapter._check("approve")
+        principal = protected(adapter, lambda: adapter._check("approve"))
         decision = ReviewDecision(
             reviewer_id=principal.subject,
             **payload.model_dump(),
