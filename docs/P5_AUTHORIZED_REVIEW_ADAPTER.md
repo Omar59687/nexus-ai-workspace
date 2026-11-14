@@ -87,3 +87,53 @@ policy in a real application.
 request validation, auth rejection, action-specific denial, tenant mismatch,
 reviewer spoofing, and permitted lifecycle calls, without any database or
 network access to an actual service.
+
+
+## Opt-in PostgreSQL session and workspace grant implementation
+
+`financial_review_access.py` introduces `PostgresFinancialAccess`
+and the inert `FINANCIAL_AUTH_SCHEMA_DDL`. It provides real database
+lookups for the HTTP router's two trusted injection points:
+
+```python
+access = PostgresFinancialAccess(auth_connection_factory)
+router = create_financial_review_router(
+    workspace_id=server_selected_workspace_id,
+    ledger_factory=workspace_scoped_review_ledger_factory,
+    authenticate_request=access.authenticate_request,
+    authorize=access.authorize,
+)
+# mount only after configuring TLS, trusted provisioning, database grants,
+# request limits, incident controls, and security review.
+```
+
+The client sends `Authorization: Bearer <64 lowercase hex characters>`
+where the token is a uniformly generated 32-byte secret. Only its SHA-256
+digest is stored in `nexus_financial_sessions`. The session must be
+created by a **separate trusted provisioning flow**; no public issuance
+or mutation endpoints are supplied. The database enforces an expiration
+time and optional revocation timestamp.
+
+An explicitly granted row in `nexus_financial_permissions` must match
+subject + workspace + action. The service checks permissions anew for
+every operation, rather than trusting client-supplied roles or claims.
+No grant means deny. Authentication/authorization database errors fail
+closed. The session/token and permissions database must be protected from
+untrusted writers. Database creation is not automatic and there is no
+production migration in this change.
+
+**Security limitations to resolve before deployment:** trusted session
+provisioning and rotation, secure administrative revocation, HTTPS,
+browser session/CSRF model, throttling, secret redaction, document-level
+authorization, concurrent revocation behavior, schema migration,
+database least-privilege roles, auditing and operator runbook. The
+bearer credential is equivalent to the session; possession authorizes
+within its grants and lifetime. Do not paste tokens into reports or
+logs or commit them to version control.
+
+The disposable PostgreSQL suite tests unknown/invalid/expired/revoked
+tokens, missing grants, action-specific permissions, cross-workspace
+isolation and permission removal against a separate loopback test DB.
+It uses the same Phase 4 nonproduction database guard and drops only
+its randomized test schema. The normal application does not mount the
+financial routes automatically.
