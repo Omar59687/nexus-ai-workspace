@@ -287,6 +287,36 @@ in the indexed plain-text chunks. This milestone maps the missing
 Arabic layout boundary; it does not solve visual-table parsing or
 remove the human review requirement.
 
+## Slice G — Separate geometry review hints from independently cited numbers
+
+The next real Mobily diagnostic (commit `733ea167`) recovered **7 revenue
+geometry bands and one complete currency/unit band** from PDF page 140,
+and **3 revenue bands and one currency/unit band** from page 142.
+These remain digest-bound PDF visitor fragments, not indexed text citations.
+The original text index continued to report **zero anchored Arabic
+metric/unit labels**. Six and three horizontal bands respectively had
+reading-order disagreement. This independently establishes that geometry
+contains useful headings while their association with financial values
+remains uncertain.
+
+The new `build_financial_review_inventory` service now produces **two
+deliberately separate lists**: (1) numeric positions for which the
+active indexed page contains the exact numeric token within a
+source-version-checked chunk; and (2) page/X/Y heading-band hints
+generated only from digest-bound PDF geometry. The latter lack a verified
+plain-text citation. The service **never combines these into rows**,
+never assigns years or units to numeric values, and always emits
+`cross_evidence_associations: 0` and
+`automatically_verified_financial_facts: 0`. Stale source versions,
+unreliable chunk offsets, cross-workspace indexes, forged geometry
+amounts and excess inventory are rejected or excluded.
+
+The existing owner diagnostic reports only the **counts** of these
+categories (`review_inventory`), not amounts, headings or raw geometry.
+An authenticated reviewer workflow can later present a separate
+human-initiated visual inspection of the document and record explicit
+row-level approvals. This is not yet automatic PDF financial parsing.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
