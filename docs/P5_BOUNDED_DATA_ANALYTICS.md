@@ -56,6 +56,55 @@ Expected groups: `Aramco=2.00`, `Mobily=19.000000`;
 grand total `21.000000`. The examples are **synthetic**, not financial
 facts about either company.
 
+## Slice B — multi-year financial series and deterministic chart output
+
+Implemented on the same isolated Phase 5 branch:
+
+- `nexus_ai.financial_analytics.analyze_financial_series` reads explicitly
+  selected CSV/XLSX records with named company, year, metric, value,
+  currency, and unit columns. Exact identity and financial year filters
+  apply before annual aggregation.
+- Currency and units are **not inferred, converted or mixed**: a mismatched
+  currency/unit for the requested company, year and metric fails closed.
+  Supported currencies: SAR, USD, EUR, GBP, JOD, AED, QAR. Supported units:
+  ones, thousands, millions, billions. Supported metrics: revenue,
+  net_income, operating_income, assets, liabilities, equity, cash_flow.
+- Each input row, including filtered-out records, must have valid values.
+  Missing financial years are not interpolated; zero-year baselines yield
+  `yoy_percent: null` with a reason. Year-over-year figures are calculated
+  using `Decimal` and reported as percentages with four decimal places.
+  Aggregation presumes additive, nonduplicated input rows.
+- `nexus_ai.financial_charts.render_financial_line_svg` produces a
+  deterministic, locally generated SVG. Data labels show exact Decimal
+  strings; plot coordinates are approximations. SVG labels are escaped and
+  the renderer rejects malformed inputs.
+- `scripts/analyze_financial_series.py` is the optional owner-invoked
+  command line interface, allowing `--report` JSON and `--svg` output.
+  It is not yet an authenticated service endpoint.
+
+Example (synthetic CSV whose numbers happen to match the verified Mobily
+annual-report revenue amounts):
+
+```csv
+Company,Year,Metric,Value,Currency,Unit
+Mobily,2024,revenue,18206447,SAR,thousands
+Mobily,2025,revenue,19641705,SAR,thousands
+```
+
+```powershell
+python scripts/analyze_financial_series.py `
+  --input "C:\Reports\revenue.csv" --company Mobily --metric revenue `
+  --currency SAR --unit thousands --start-year 2024 --end-year 2025 `
+  --report "C:\Reports\results\revenue.json" `
+  --svg "C:\Reports\results\revenue.svg"
+```
+
+The values in this input are **caller-entered CSV values**, not financial
+cells extracted by this Phase 5 service from the annual-report PDF.
+Automated table-row extraction from PDF remains a different acceptance
+requirement. No output is evidence of a source document unless the
+caller supplies trusted source data and validates its provenance.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
@@ -65,7 +114,7 @@ facts about either company.
   regression in `.github/workflows/p5-analytics-acceptance.yml`.
 - No model calls, hosted writes, PRs or merge to `main`.
 
-**Future Phase 5 work:** explicit unit/currency declarations and mixed-unit
-rejection, richer metrics and filters, deterministic chart rendering, API
-authorization integration, measured workload targets, formal quality gate.
-Do not claim Phase 5 complete because Slice A tests pass.
+**Remaining Phase 5 work:** richer financial derivations and source-linked
+provenance, authorization/API integration, real workload performance and
+formal full-repository quality gate. Slice A/B tests alone do not make Phase 5
+production-complete.
