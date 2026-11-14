@@ -114,6 +114,19 @@ class PositionedTableTests(unittest.TestCase):
         with self.assertRaises(AnalyticsInputError):
             self.extract((PositionedText(141, 20, 90, "Total revenue"),))
 
+    def test_unanchored_arabic_revenue_fragments_reported_but_not_promoted(self):
+        # A broken PDF font may emit a recognizable word in geometry text
+        # that cannot be found in the source index. It remains diagnostic
+        # only, not valid row evidence.
+        altered = tuple(box for box in self.boxes if box.text != "Total revenue")
+        altered += (PositionedText(140, 20, 90, "إجمالي الإيرادات"),)
+        result = self.extract(altered)
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertEqual(result["automatically_verified_financial_facts"], 0)
+        lexical = result["lexical_diagnostics"]
+        self.assertEqual(lexical["positioned_fragment_lexical_hints"]["revenue_word"], 0)
+        self.assertGreater(lexical["unanchored_fragment_lexical_hints"]["revenue_word"], 0)
+
     def test_mismatching_unicode_fragments_are_reported_without_fake_rows(self):
         boxes = self.boxes + (
             PositionedText(140, 25, 35, "not in original extraction"),
