@@ -356,6 +356,48 @@ Focused tests cover approval gating, rejection, untrusted citation edits,
 source replacement before/after review, cross-workspace rejection,
 conflicting totals, duplicate citations and complete analysis output.
 
+## Slice I — Durable PostgreSQL reviewed-financial ledger (inert schema)
+
+`src/nexus_ai/financial_review_persistence.py` now defines
+`FINANCIAL_REVIEW_SCHEMA_DDL` and a DB-API `PostgresFinancialReviewLedger`.
+This is an **opt-in repository layer**; importing or constructing the
+ledger never applies migrations or connects to a hosted database without
+an injected connection factory.
+
+The ledger persists pending numeric selections and immutable decisions.
+A row moves only from `PENDING` to `APPROVED` or `REJECTED`,
+with database constraints requiring explicit visual confirmation fields
+for approval, and a reviewer identifier. An approved financial record
+retains source document/version/hash/path, page and exact chunk offsets,
+amount, company, financial year, currency, unit and metric. Operations
+use bounded transactions, row locking for decisions, a workspace-scoped
+capacity lock for submissions, commit/rollback and isolated connections.
+Reading the ledger from a fresh connection recovers approved records,
+which are **revalidated against the active indexed source** before
+being supplied to `analyze_reviewed_evidence`.
+
+The current ledger does **not** authenticate the reviewer, attest a
+human actually opened the document, prevent trusted-operator identity
+spoofing, or create a tamper-proof compliance audit log. Application
+authorization and per-workspace tenancy must be enforced independently.
+It also does not automatically transform the existing volatile
+`FinancialReviewSession` into durable storage; use the durable ledger
+interface explicitly. Its schema is a proposal, not a deployed migration.
+
+`tests/persistence/test_financial_review_ledger_integration.py` exercises
+durability, rollback, rejection, duplicate financial totals, source
+replacement, bounded capacity and workspace isolation in a **disposable
+localhost PostgreSQL database**. It reuses the Phase 4 test suite's
+strict database-name, empty-database and loopback guardrails and
+independently creates/drops only an isolated test schema.
+
+**Still required for production:** approved schema migration strategy,
+authenticated reviewer and tenant permissions, immutability/audit policy,
+real-device PDF review UI, version-change invalidation integrated with
+document lifecycle, and full end-to-end acceptance on real reports.
+Until then, the Phase 5 deliverable is a tested backend integration
+slice, not a production-ready financial statement review product.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
