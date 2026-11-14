@@ -132,7 +132,7 @@ def _worker(argv: list[str]) -> int:
                     raise ValueError("PDF position box budget exceeded")
             reader.pages[number - 1].extract_text(visitor_text=visitor)
             output[str(number)] = boxes
-        sys.stdout.write(json.dumps({"status": "OK", "pages": output}, ensure_ascii=False))
+        sys.stdout.write(json.dumps({"status": "OK", "pages": output}, ensure_ascii=True))
         return 0
     except BaseException:
         sys.stdout.write('{"status":"ABSTAIN"}')
