@@ -88,7 +88,7 @@ class FullFinancialReviewStackTests(unittest.TestCase):
             ),
             authenticate_request=access.authenticate_request,
             authorize=access.authorize,
-            pdf_bytes_provider=lambda doc_id, version_id: self.raw,
+            pdf_bytes_provider=lambda principal, workspace, doc_id, version_id: self.raw,
         ))
         self.client = TestClient(app)
         self.auth = {"Authorization": "Bearer " + self.token}
