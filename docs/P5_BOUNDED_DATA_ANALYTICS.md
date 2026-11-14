@@ -317,6 +317,45 @@ An authenticated reviewer workflow can later present a separate
 human-initiated visual inspection of the document and record explicit
 row-level approvals. This is not yet automatic PDF financial parsing.
 
+## Slice H — Explicit, volatile human review to analytics
+
+The `financial_review_workflow.py` module now implements the complete
+**library-level** path from an independently source-cited numeric
+selection to a human-approved financial observation and calculated
+annual series. It is not a production authenticated app and does
+not persist decisions across process restarts.
+
+Workflow:
+
+1. A trusted application adapter obtains `numeric_citations` from a
+   version-checked review inventory. The geometry-label-band hints
+   remain separate; they cannot be used as proof of a row.
+2. `FinancialReviewSession.enqueue(ReviewSelection(...))` revalidates
+   the active workspace/document/version and exact numeric chunk offsets,
+   then stores an immutable copy of the citation in a bounded queue.
+3. A **real, externally authenticated** human must visually inspect
+   the original document and independently assert company, metric,
+   financial year, currency and unit. `approve(..., ReviewDecision(...))`
+   requires both explicit visual-attestation booleans. `reject()`
+   permanently excludes a selected item from this volatile session.
+4. `analyze(...)` submits only approved records through the existing
+   `analyze_reviewed_evidence` validator. That validator rechecks
+   document generations, prevents duplicate total counting, rejects
+   conflicting annual values and mixed currencies/units, then computes
+   deterministic Decimal annual totals and growth.
+
+**Security boundary:** `reviewer_id` and `workspace_id` parameters are
+not authentication. This module deliberately lacks a public HTTP endpoint,
+durable audit log, cryptographic proof of visual review, authorization
+policy, or deployment migration. These must be implemented and tested
+before exposing the workflow to untrusted users. The output cannot claim
+automatic row verification, and approvals must be invalidated when an
+indexed document version changes.
+
+Focused tests cover approval gating, rejection, untrusted citation edits,
+source replacement before/after review, cross-workspace rejection,
+conflicting totals, duplicate citations and complete analysis output.
+
 ## Engineering acceptance for Slice A
 
 - CSV validation, malformed headers/numbers, row/group/file limits.
