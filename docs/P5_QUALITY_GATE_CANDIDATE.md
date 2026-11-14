@@ -68,3 +68,27 @@ and access adapter are specifically opt-in development candidates.
 
 **No gate is approved by this document. No deployment, production
 database migration, PR or merge is authorized.**
+
+
+## Latest focused engineering additions (verification status must match CI)
+
+- Reviewed financial CSV export now rejects noncanonical, malformed and
+  out-of-precision decimal values using the existing bounded analytics
+  numeric parser, rather than merely allowing certain punctuation patterns.
+  The checks run in the Phase 5 deterministic test stage.
+- A reproducible **report-only** performance harness exists at
+  `scripts/measure_p5_analytics.py`. It generates identical synthetic
+  5,000-row CSV and XLSX datasets, verifies Decimal totals, then measures
+  elapsed milliseconds and `tracemalloc` peak bytes. The workflow runs it
+  after the functional regression stages.
+- Run locally, including on the owner's target Windows hardware, with
+  `python scripts/measure_p5_analytics.py --rows 5000` using the
+  Phase 5 analytics dependencies. Record Python/dependency versions and
+  the full JSON result. Do not reuse GitHub-hosted Linux timings as
+  Windows acceptance measurements.
+- The measurement deliberately does not impose an arbitrary performance
+  threshold. Before gate 5 can be marked accepted, set justified targets
+  for expected file size, latency and RSS memory on target hardware,
+  run repeated measurements and document observed values and margins.
+
+**This addendum does not change the OPEN gate status or imply owner approval.**
