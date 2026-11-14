@@ -137,3 +137,35 @@ isolation and permission removal against a separate loopback test DB.
 It uses the same Phase 4 nonproduction database guard and drops only
 its randomized test schema. The normal application does not mount the
 financial routes automatically.
+
+
+## Source-verified pending review queue
+
+The optional endpoint `GET /financial-reviews/selections?limit=50`
+lists **at most 100** pending numeric selections. It requires the
+independent `list` workspace grant. The ledger reads only pending rows
+for the configured workspace, ordered by review ID, and verifies every
+citation against the current indexed source and document version before
+responding. If any selected row is stale, the entire operation fails
+closed: it does not leak an unverified partial result. The response
+provides the exact cited number, document/version/page, and immutable
+citation metadata needed to locate the source in a separate trusted
+document viewer.
+
+The queue deliberately does **not** supply automatically inferred
+company, financial year, accounting row, currency or scale; it marks all
+items as requiring visual review and never as automatically verified
+financial facts. Approvals continue to require explicit review of the
+original source and independently asserted accounting fields.
+
+The auth schema proposal now includes action `list`. Existing installations
+would require an explicitly reviewed migration to permit this action;
+there is no automatic DDL change. Default application routes remain
+unmodified. The queue is a backend review inbox, **not** a PDF viewer
+or finished reviewer UI.
+
+Additional safeguards before production: ensure `list` permissions are
+assigned only to users allowed to view the cited document, add a
+server-authorized document preview and browser-safe review client, verify
+session revocation behavior at transaction boundaries, and complete
+security testing and a controlled migration plan.
