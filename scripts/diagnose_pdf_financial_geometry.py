@@ -17,6 +17,7 @@ from nexus_ai.documents.collection_index import CollectionIndexService
 from nexus_ai.documents.collection_preflight import _manifest_entries
 from nexus_ai.documents.collection_types import CollectionIndexLimits
 from nexus_ai.financial_pdf_geometry import extract_pdf_positions
+from nexus_ai.financial_pdf_layout_diagnostics import inspect_pdf_layout_signals
 from nexus_ai.financial_positioned_tables import reconstruct_financial_rows
 from nexus_ai.retrieval.collection_repository import InMemoryCollectionIndexRepository
 
@@ -52,6 +53,7 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
     )
     reports = []
     for page in pages:
+        layout_signals = inspect_pdf_layout_signals(positioned[page], page_number=page)
         try:
             record = reconstruct_financial_rows(
                 positioned[page], repository=repository, workspace_id=workspace,
@@ -88,6 +90,7 @@ def diagnostic(pdf: Path, *, pages: tuple[int, ...]) -> dict:
         reports.append({
             "pdf_page_number": page,
             "positioned_fragments": len(positioned[page]),
+            "digest_bound_layout_signals": layout_signals,
             "status": status,
             "review_only_candidate_count": count,
             "abstentions": abstentions,
