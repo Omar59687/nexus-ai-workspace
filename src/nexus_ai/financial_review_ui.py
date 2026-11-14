@@ -88,6 +88,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
 (function () {
   const el = id => document.getElementById(id);
   let token = "";
+  let sessionGeneration = 0;
   let selected = null;
   const message = msg => { el("status").textContent = String(msg); };
   const clearSelection = () => {
@@ -103,16 +104,24 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
   };
   async function request(path, method, payload, binary) {
     if (!token) { throw Error("Enter your reviewer token first."); }
+    const generation = sessionGeneration;
     const options = {method: method || "GET", headers: {"Authorization": "Bearer " + token}, cache: "no-store"};
     if (payload !== undefined) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(payload);
     }
     const res = await fetch("/financial-reviews/" + path, options);
+    if (generation !== sessionGeneration) { throw Error("Session changed."); }
     if (!res.ok) { throw Error("Request failed (" + res.status + ")."); }
-    if (binary) { return await res.blob(); }
+    if (binary) {
+      const result = await res.blob();
+      if (generation !== sessionGeneration) { throw Error("Session changed."); }
+      return result;
+    }
     if (res.status === 204) { return null; }
-    return await res.json();
+    const result = await res.json();
+    if (generation !== sessionGeneration) { throw Error("Session changed."); }
+    return result;
   }
   async function refresh() {
     clearSelection();
@@ -202,12 +211,15 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     }
   });
   el("connect").addEventListener("click", async () => {
+    sessionGeneration++;
     token = el("token").value.trim();
     el("token").value = "";
     el("queue").replaceChildren();
     el("analysisResults").replaceChildren();
     clearSelection();
+    const generation = sessionGeneration;
     try { await refresh(); } catch (e) {
+      if (generation !== sessionGeneration) { return; }
       token = "";
       el("queue").replaceChildren();
       clearSelection();
@@ -215,6 +227,7 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
     }
   });
   el("disconnect").addEventListener("click", () => {
+    sessionGeneration++;
     token = "";
     el("token").value = "";
     el("queue").replaceChildren();
@@ -268,7 +281,10 @@ fieldset {border:1px solid #aaa7;border-radius:6px}
       message("Selection rejected.");
     } catch (e) { message(e.message); }
   });
-  window.addEventListener("pagehide", () => { token = ""; });
+  window.addEventListener("pagehide", () => {
+    sessionGeneration++;
+    token = "";
+  });
 })();
 </script>
 </body></html>"""
